@@ -1,0 +1,10 @@
+{
+	"name": "lab",
+	"version": "0.0.1",
+	"dependencies": {
+		"jsenv": "file:../jsenv"
+	},
+	"scripts": {
+		"preinstall": "npm link ../jsenv"
+	}
+}
