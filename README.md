@@ -36,15 +36,17 @@ const composite = compose(dam, seb);
 const actualComposite = composite.value;
 assert.deepEqual(actualComposite, expectedComposite);
 
-// compose have no side effect so dam is not modified and next assertion is verified
+// composed objects are frozen and their properties are not altered by compose()
+assert(Object.isFrozen(dam));
+assert(Object.isFrozen(seb));
+assert(Object.isFrozen(actualComposite));
 assert(dam.item.hasOwnProperty('price') === false);
 
 // every composite got a construct method to create instance
 const compositeInstance = composite.construct();
 assert.deepEqual(compositeInstance, actualComposite);
 
-// and each construct() instantiate nested composite so that the both assertion below are verified 
-assert(compositeInstance.item !== actualComposite.item);
+// instance are not frozen and got their own properties
 compositeInstance.item.name = 'hammer';
 assert(actualComposite.item.name === 'sword');
 ```
