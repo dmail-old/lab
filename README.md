@@ -6,7 +6,7 @@ It's under active developement.
 ## Example
 
 ```javascript
-import compose from '@dmail/lab';
+import {compose} from '@dmail/lab';
 import assert from '@node/assert';
 
 const dam = {
@@ -37,12 +37,12 @@ const actualComposite = composite.value;
 assert.deepEqual(actualComposite, expectedComposite);
 ```
 
-## Composite immutability
+## Composite value immutability
 
-Every composite is immutable, their properties cannot be modified.  
+Composite enforce immutability of their value as the following demonstrates.  
 
 ```javascript
-import compose from '@dmail/lab';
+import {compose} from '@dmail/lab';
 
 const value = {};
 compose(value);
@@ -51,11 +51,11 @@ Object.isFrozen(value); // true
 
 ## How to use composite ?
 
-Composite are not meant to be consumed directly, that's why they are immutable.  
-The purpose is to call composite construct method to produce instance. 
+Composite are not meant to be consumed directly, that's why they enforce immutability.  
+The purpose is to call composite construct method to produce a consumable instance. 
 
 ```javascript
-import compose from '@dmail/lab';
+import {compose} from '@dmail/lab';
 
 const value = {};
 const composite = compose(value);
