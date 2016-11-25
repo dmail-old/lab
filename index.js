@@ -1,6 +1,11 @@
 import Lab from './lib/lab.js';
 import './lib/primitive.js';
-import './lib/composite.js';
+import {ObjectElement} from './lib/composite.js';
+
+const baseElement = ObjectElement.create();
+const compose = baseElement.compose.bind(baseElement);
+
+export {compose};
 
 // ça commence à ressembler à kk chose
 // on va pouvoir tester que les primitives sont bien overides
@@ -43,6 +48,13 @@ export const test = {
             const compositeFriendsElement = damFriendsElement.compose(sandraFriendsElement);
 
             assert.deepEqual(compositeFriendsElement.value, expectedComposite);
+        });
+
+        this.add('function ?', function() {
+            // function have a circular structre because of prototype + constructor
+            // for now we may ignore this until circular stucture are supported
+            const functionElement = Lab.scan(function() {});
+            console.log(functionElement);
         });
 
         // this.add('element construct', function() {
