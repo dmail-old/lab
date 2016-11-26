@@ -1,4 +1,4 @@
-import Lab from './lib/lab.js';
+import {scan} from './lib/lab.js';
 import './lib/primitive.js';
 import {ObjectElement} from './lib/composite.js';
 
@@ -6,13 +6,6 @@ const baseElement = ObjectElement.create();
 const compose = baseElement.compose.bind(baseElement);
 
 export {compose};
-
-// ça commence à ressembler à kk chose
-// on va pouvoir tester que les primitives sont bien overides
-// puis que les array sont bien concatené et les propriété des array bien combinés
-// une fois qu'on auras fait ça faudrais mettre en place un moyen de modifier la conf par défaut
-// mais bon c'est pas forcément primordial actuellement
-// ce qu'on veut c'est surtout un comportement par défaut, la possibilité de l'override c'est du bonus
 
 export const test = {
     modules: ['@node/assert'],
@@ -23,8 +16,8 @@ export const test = {
             const seb = {name: 'seb', item: {price: 10}, age: 10};
             const expectedComposite = {name: 'seb', item: {name: 'sword', price: 10}, age: 10};
 
-            const damElement = Lab.scan(dam);
-            const sebElement = Lab.scan(seb);
+            const damElement = scan(dam);
+            const sebElement = scan(seb);
             assert(damElement.value === dam);
             assert(sebElement.value === seb);
 
@@ -43,19 +36,28 @@ export const test = {
             expectedComposite.foo = damFriends.foo;
             expectedComposite.bar = sandraFriends.bar;
 
-            const damFriendsElement = Lab.scan(damFriends);
-            const sandraFriendsElement = Lab.scan(sandraFriends);
+            const damFriendsElement = scan(damFriends);
+            const sandraFriendsElement = scan(sandraFriends);
             const compositeFriendsElement = damFriendsElement.compose(sandraFriendsElement);
 
             assert.deepEqual(compositeFriendsElement.value, expectedComposite);
         });
 
-        this.add('function ?', function() {
-            // function have a circular structre because of prototype + constructor
-            // for now we may ignore this until circular stucture are supported
-            const functionElement = Lab.scan(function() {});
-            console.log(functionElement);
+        this.add('compose array', function() {
+            const array = [0, 1];
+            const arrayElement = scan(array);
+            const composedArray = arrayElement.compose();
+            assert(arrayElement.value === array);
+            assert(composedArray.value === array);
+            assert(composedArray === arrayElement);
         });
+
+        // this.add('function ?', function() {
+        //     // function have a circular structre because of prototype + constructor
+        //     // for now we may ignore this until circular stucture are supported
+        //     const functionElement = Lab.scan(function yep() {});
+        //     console.log(functionElement);
+        // });
 
         // this.add('element construct', function() {
         //     const dam = {name: 'dam', item: {name: 'sword'}};
