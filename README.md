@@ -37,21 +37,9 @@ const actualComposite = composite.value;
 assert.deepEqual(actualComposite, expectedComposite);
 ```
 
-## Composite value immutability
-
-Composite enforce immutability of their value as the following demonstrates.  
-
-```javascript
-import {compose} from '@dmail/lab';
-
-const value = {};
-compose(value);
-Object.isFrozen(value); // true
-```
-
 ## How to use composite ?
 
-Composite are not meant to be consumed directly, that's why they enforce immutability.  
+Composite are not meant to be consumed directly.  
 The purpose is to call composite construct method to produce a consumable instance. 
 
 ```javascript
@@ -61,7 +49,6 @@ const value = {};
 const composite = compose(value);
 const instance = composite.construct();
 Object.getPrototypeOf(instance) === value; // true
-Object.isFrozen(instance); // false
 ```
 
 ## What are the benefits ?
