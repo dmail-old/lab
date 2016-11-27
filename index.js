@@ -7,6 +7,32 @@ const compose = baseElement.compose.bind(baseElement);
 
 export {compose};
 
+/*
+amélioration de unit test afin d'éviter le problème que lorsqu'on comment un module
+on a eslint qui dit cette variable n'est pas utilisé blah blah
+
+exports const test = {
+    modules: {
+        assert: '@node/assert',
+        scan: './lib/lab.js#scan'
+    },
+    main() {
+        this.add('test', function({assert, scan}) {
+
+        });
+
+        this.add({
+            modules: {
+                path: '@node/path'
+            },
+            main({assert, path}) {
+
+            }
+        })
+    }
+};
+*/
+
 export const test = {
     modules: ['@node/assert'],
 
@@ -18,11 +44,15 @@ export const test = {
 
             const damElement = scan(dam);
             const sebElement = scan(seb);
-            assert(damElement.value === dam);
-            assert(sebElement.value === seb);
+            const damValue = damElement.value;
+            const sebValue = sebElement.value;
+            assert(damValue === dam);
+            assert(sebValue === seb);
+            assert(damElement.getProperty('name').descriptor.writable === true);
 
             const compositeElement = damElement.compose(sebElement);
-            assert.deepEqual(compositeElement.value, expectedComposite);
+            const compositeValue = compositeElement.value;
+            assert.deepEqual(compositeValue, expectedComposite);
             assert.deepEqual(dam, {name: 'dam', item: {name: 'sword'}});
         });
 
@@ -43,13 +73,35 @@ export const test = {
             assert.deepEqual(compositeFriendsElement.value, expectedComposite);
         });
 
-        this.add('compose array', function() {
+        this.add('scan + compose array', function() {
             const array = [0, 1];
             const arrayElement = scan(array);
             const composedArray = arrayElement.compose();
             assert(arrayElement.value === array);
             assert(composedArray.value === array);
             assert(composedArray === arrayElement);
+        });
+
+        this.add('compose array', function() {
+            const array = [0, 1];
+            const arrayElement = compose(array);
+
+            assert.deepEqual(arrayElement.value, array);
+            assert((arrayElement.value instanceof Array) === false); // it's an arraylike
+        });
+
+        this.add('compose array in property', function() {
+            const obj = {
+                list: ['a', 'b']
+            };
+            const element = compose(obj);
+            const composed = element.value;
+
+            // because we composed object with an other the obj was "cloned"
+            // if we used scan it would be different but as we can see the clone is not deep
+            assert(composed !== obj);
+            assert(composed.list === obj.list);
+            // assert(element.value.list instanceof Array);
         });
 
         // this.add('function ?', function() {
