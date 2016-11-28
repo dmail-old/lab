@@ -87,7 +87,7 @@ export const test = {
             const arrayElement = compose(array);
 
             assert.deepEqual(arrayElement.value, array);
-            assert((arrayElement.value instanceof Array) === false); // it's an arraylike
+            assert((arrayElement.value instanceof Array));
             assert(arrayElement.hasProperty('length'));
         });
 
