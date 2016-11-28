@@ -96,8 +96,18 @@ export const test = {
             const composite = compose(object).compose({
                 name: true
             });
-            console.log(composite);
-        }).skip('not working yet');
+            assert(composite.value.name === true);
+        });
+
+        this.add('composite overrides primitive', function() {
+            const object = {
+                name: true
+            };
+            const composite = compose(object).compose({
+                name: {}
+            });
+            assert(typeof composite.value.name === 'object');
+        });
 
         this.add('array concatenation', function() {
             const damFriends = ['seb', 'clément'];
