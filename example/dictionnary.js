@@ -49,14 +49,22 @@ import {compose} from '../index.js';
 // });
 const Term = compose({
     definitions: [],
-    constructor(id) {
+    constructor(id, definitions) {
         this.id = id;
+        if (definitions) {
+            this.definitions = definitions;
+        }
     },
 
     contextualize(context) {
         this.definitions = this.definitions.sort(function(a, b) {
-            return a.score(context) - b.score(context);
+            return b.score(context) - a.score(context);
         });
+        return this;
+    },
+
+    read() {
+        return this.definitions[0].read();
     }
 });
 const Condition = compose({
@@ -83,7 +91,6 @@ const Definition = compose({
         return this.value;
     }
 });
-
 const LanguageCondition = Condition.compose({
     lang: '',
     score(context) {
@@ -95,12 +102,7 @@ const LanguageCondition = Condition.compose({
 });
 const greetingFRDefinition = Definition.construct('Bonjour', LanguageCondition.construct('fr'));
 const greetingENDefinition = Definition.construct('Hello', LanguageCondition.construct('en'));
-const greetingTerm = Term.compose({
-    definitions: [
-        greetingFRDefinition,
-        greetingENDefinition
-    ]
-}).construct('greetings');
+const greetingTerm = Term.construct('greetings', [greetingFRDefinition, greetingENDefinition]);
 
-// greetingTerm.contextualize({score: 1});
-console.log(greetingTerm.definitions);
+console.log(greetingTerm.contextualize({lang: 'fr'}).read()); // 'Bonjour'
+console.log(greetingTerm.contextualize({lang: 'en'}).read()); // 'Hello'
