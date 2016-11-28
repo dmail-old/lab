@@ -2,25 +2,25 @@
 
 import {compose} from '../index.js';
 
-const Constant = compose({
+const Model = compose({
     constructor(value) {
-        console.log(this.value);
         this.value = value;
     },
     value: '',
-    read() {
+    get() {
         return this.value;
-    }
-});
-const Variable = compose({
-    constructor(value) {
-        this.value = value;
     },
-    read(data) {
-        return this.transform(data[this.value]);
+    read(...args) {
+        return this.transform(this.get(...args));
     },
     transform(value) {
         return value;
+    }
+});
+const Constant = Model.compose();
+const Variable = Model.compose({
+    get(data) {
+        return data[this.value];
     }
 });
 const HelloTemplate = compose({
