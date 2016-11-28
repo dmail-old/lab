@@ -89,6 +89,21 @@ export const test = {
             assert(composite.value.item !== element.value.item);
         });
 
+        this.add('construct must create new objects', function() {
+            const object = {
+                item: {},
+                values: [{}]
+            };
+            const composite = scan(object);
+            const instance = composite.construct();
+            // instance must have his own object/array by default
+
+            assert(instance !== object);
+            assert(instance.item !== object.item);
+            assert(instance.values !== object.values);
+            assert(instance.values[0] !== object.values[0]);
+        });
+
         this.add('primitive overrides composite property value', function() {
             const object = {
                 name: {}
