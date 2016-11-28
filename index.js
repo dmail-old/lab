@@ -88,6 +88,7 @@ export const test = {
 
             assert.deepEqual(arrayElement.value, array);
             assert((arrayElement.value instanceof Array) === false); // it's an arraylike
+            assert(arrayElement.hasProperty('length'));
         });
 
         this.add('compose array in property', function() {
@@ -102,6 +103,13 @@ export const test = {
             assert(composed !== obj);
             assert(composed.list === obj.list);
             // assert(element.value.list instanceof Array);
+        });
+
+        this.add('compose two array into arraylike', function() {
+            const firstArray = [1];
+            const secondArray = [2, 3];
+            const composedArray = compose(firstArray).compose(secondArray);
+            assert(composedArray.value.length === 3);
         });
 
         // this.add('function ?', function() {
