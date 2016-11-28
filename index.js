@@ -3,6 +3,17 @@ import './lib/primitive.js';
 import {ObjectElement} from './lib/composite.js';
 
 const baseElement = ObjectElement.create();
+// by default this baseElement reaction let the secondObject prevails
+baseElement.reaction = baseElement.reaction.extend({
+    produceComposite(firstObject, secondObject) {
+        const firstValue = firstObject.value;
+        const secondValue = secondObject.value;
+        const combinedValue = secondObject.combine(firstValue, secondValue);
+        const compositeObject = secondObject.createConstructor(combinedValue);
+
+        return compositeObject;
+    }
+});
 const compose = baseElement.compose.bind(baseElement);
 
 export {compose};
@@ -37,6 +48,15 @@ export const test = {
     modules: ['@node/assert'],
 
     main(assert) {
+        this.add('scan is mutable, compose is immutable', function() {
+            const object = {};
+            const scanned = scan(object);
+            const composed = compose(object);
+
+            assert(scanned.value === object);
+            assert(composed.value !== object);
+        });
+
         this.add('object composition', function() {
             const dam = {name: 'dam', item: {name: 'sword'}};
             const seb = {name: 'seb', item: {price: 10}, age: 10};
@@ -55,6 +75,29 @@ export const test = {
             assert.deepEqual(compositeValue, expectedComposite);
             assert.deepEqual(dam, {name: 'dam', item: {name: 'sword'}});
         });
+
+        this.add('compose wo arg must create a new object', function() {
+            const object = {
+                item: {}
+            };
+            const element = compose(object);
+            assert(element.value !== object);
+            assert(element.value.item !== object.item);
+
+            const composite = element.compose();
+            assert(composite.value !== element.value);
+            assert(composite.value.item !== element.value.item);
+        });
+
+        this.add('primitive overrides composite property value', function() {
+            const object = {
+                name: {}
+            };
+            const composite = compose(object).compose({
+                name: true
+            });
+            console.log(composite);
+        }).skip('not working yet');
 
         this.add('array concatenation', function() {
             const damFriends = ['seb', 'clément'];
@@ -78,8 +121,7 @@ export const test = {
             const arrayElement = scan(array);
             const composedArray = arrayElement.compose();
             assert(arrayElement.value === array);
-            assert(composedArray.value === array);
-            assert(composedArray === arrayElement);
+            assert.deepEqual(composedArray.value, array);
         });
 
         this.add('compose array', function() {
@@ -87,7 +129,7 @@ export const test = {
             const arrayElement = compose(array);
 
             assert.deepEqual(arrayElement.value, array);
-            assert((arrayElement.value instanceof Array));
+            assert(arrayElement.value instanceof Array);
             assert(arrayElement.hasProperty('length'));
         });
 
@@ -99,40 +141,17 @@ export const test = {
             const composed = element.value;
 
             // because we composed object with an other the obj was "cloned"
-            // if we used scan it would be different but as we can see the clone is not deep
+            // if we used scan it would be different but as we can see the clone
             assert(composed !== obj);
-            assert(composed.list === obj.list);
-            // assert(element.value.list instanceof Array);
+            assert(composed.list !== obj.list);
+            assert(element.value.list instanceof Array);
         });
 
-        this.add('compose two array into arraylike', function() {
+        this.add('compose two array', function() {
             const firstArray = [1];
             const secondArray = [2, 3];
             const composedArray = compose(firstArray).compose(secondArray);
             assert(composedArray.value.length === 3);
         });
-
-        // this.add('function ?', function() {
-        //     // function have a circular structre because of prototype + constructor
-        //     // for now we may ignore this until circular stucture are supported
-        //     const functionElement = Lab.scan(function yep() {});
-        //     console.log(functionElement);
-        // });
-
-        // this.add('element construct', function() {
-        //     const dam = {name: 'dam', item: {name: 'sword'}};
-        //     const damElement = Lab.scan(dam);
-        //     const damInstanceA = damElement.construct();
-        //     const damInstanceB = damElement.construct();
-
-        //     // compile does the job but we want
-        //     // element.construct that will call any .constructor method
-        //     // and maybe do more
-
-        //     assert.deepEqual(damInstanceA.item, dam.item);
-        //     assert.deepEqual(damInstanceB.item, dam.item);
-        //     assert(damInstanceA.item !== dam.item);
-        //     assert(damInstanceB.item !== dam.item);
-        // });
     }
 };
