@@ -108,6 +108,7 @@ export const test = {
 
             this.add('construct must create new objects', function() {
                 const object = {
+                    foo: true,
                     item: {},
                     values: [{}]
                 };
@@ -116,6 +117,10 @@ export const test = {
                 assertPrototype(instance, object);
                 assertPrototype(instance.item, object.item);
                 assertPrototype(instance.values[0], object.values[0]);
+
+                // construct must not set non composite property on instance
+                // we'll have to update the instantiationInfection to allow this
+                // assert(instance.hasOwnProperty('foo') === false);
             });
 
             this.add('primitive overrides composite property value', function() {
