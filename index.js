@@ -3,16 +3,10 @@ import './lib/primitive.js';
 import {ObjectElement} from './lib/composite.js';
 
 const baseElement = ObjectElement.create();
-// by default this baseElement reaction let the secondObject prevails
-baseElement.reaction = baseElement.reaction.extend({
-    maker(firstObject, secondObject) {
-        const compositeObject = secondObject.procreate();
-        compositeObject.firstComponent = firstObject;
-        compositeObject.secondComponent = secondObject;
-
-        return compositeObject;
-    }
-});
+// baseElement reaction let the secondObject prevails
+baseElement.createComposite = function(firstObject, secondObject) {
+    return secondObject.procreate();
+};
 const compose = baseElement.compose.bind(baseElement);
 
 export {compose};
@@ -205,10 +199,7 @@ export const test = {
             this.add('function scan', function() {
                 const fn = function() {};
                 const element = scan(fn);
-                const composite = element.compose();
-                const instance = composite.construct();
-
-                console.log(instance);
+                element.compose();
             });
 
             this.add('function in properties', function() {
