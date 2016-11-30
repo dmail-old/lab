@@ -5,11 +5,10 @@ import {ObjectElement} from './lib/composite.js';
 const baseElement = ObjectElement.create();
 // by default this baseElement reaction let the secondObject prevails
 baseElement.reaction = baseElement.reaction.extend({
-    produceComposite(firstObject, secondObject) {
-        const firstValue = firstObject.value;
-        const secondValue = secondObject.value;
-        const combinedValue = secondObject.combine(firstValue, secondValue);
-        const compositeObject = secondObject.createConstructor(combinedValue);
+    maker(firstObject, secondObject) {
+        const compositeObject = secondObject.procreate();
+        compositeObject.firstComponent = firstObject;
+        compositeObject.secondComponent = secondObject;
 
         return compositeObject;
     }
@@ -134,23 +133,22 @@ export const test = {
             assert(composite.value.name === true);
         });
 
-        // this.add('composite overrides primitive', function() {
-        //     const object = {
-        //         name: true
-        //     };
-        //     const composite = compose(object).compose({
-        //         name: {}
-        //     });
-        //     assert(typeof composite.value.name === 'object');
-        // });
+        this.add('composite overrides primitive', function() {
+            const object = {
+                name: true
+            };
+            const composite = compose(object).compose({
+                name: {}
+            });
+            assert(typeof composite.value.name === 'object');
+        });
 
         this.add('array concatenation', function() {
             const damFriends = ['seb', 'clément'];
-            const sandraFriends = ['sumaya'];
-            const expectedComposite = ['seb', 'clément', 'sumaya'];
-            // set some sparse properties on array to ensure they are composed as well
             damFriends.foo = 'foo';
+            const sandraFriends = ['sumaya'];
             sandraFriends.bar = 'bar';
+            const expectedComposite = ['seb', 'clément', 'sumaya'];
             expectedComposite.foo = damFriends.foo;
             expectedComposite.bar = sandraFriends.bar;
 
@@ -161,42 +159,42 @@ export const test = {
             assert.deepEqual(compositeFriendsElement.value, expectedComposite);
         });
 
-        // this.add('scan + compose array', function() {
-        //     const array = [0, 1];
-        //     const arrayElement = scan(array);
-        //     const composedArray = arrayElement.compose();
-        //     assert(arrayElement.value === array);
-        //     assert.deepEqual(composedArray.value, array);
-        // });
+        this.add('scan + compose array', function() {
+            const array = [0, 1];
+            const arrayElement = scan(array);
+            const composedArray = arrayElement.compose();
+            assert(arrayElement.value === array);
+            assert.deepEqual(composedArray.value, array);
+        });
 
-        // this.add('compose array', function() {
-        //     const array = [0, 1];
-        //     const arrayElement = compose(array);
+        this.add('compose array', function() {
+            const array = [0, 1];
+            const arrayElement = compose(array);
 
-        //     assert.deepEqual(arrayElement.value, array);
-        //     assert(arrayElement.value instanceof Array);
-        //     assert(arrayElement.hasProperty('length'));
-        // });
+            assert.deepEqual(arrayElement.value, array);
+            assert(arrayElement.value instanceof Array);
+            assert(arrayElement.hasProperty('length'));
+        });
 
-        // this.add('compose array in property', function() {
-        //     const obj = {
-        //         list: ['a', 'b']
-        //     };
-        //     const element = compose(obj);
-        //     const composed = element.value;
+        this.add('compose array in property', function() {
+            const obj = {
+                list: ['a', 'b']
+            };
+            const element = compose(obj);
+            const composed = element.value;
 
-        //     // because we composed object with an other the obj was "cloned"
-        //     // if we used scan it would be different but as we can see the clone
-        //     assert(composed !== obj);
-        //     assert(composed.list !== obj.list);
-        //     assert(element.value.list instanceof Array);
-        // });
+            // because we composed object with an other the obj was "cloned"
+            // if we used scan it would be different but as we can see the clone
+            assert(composed !== obj);
+            assert(composed.list !== obj.list);
+            assert(element.value.list instanceof Array);
+        });
 
-        // this.add('compose two array', function() {
-        //     const firstArray = [1];
-        //     const secondArray = [2, 3];
-        //     const composedArray = compose(firstArray).compose(secondArray);
-        //     assert(composedArray.value.length === 3);
-        // });
+        this.add('compose two array', function() {
+            const firstArray = [1];
+            const secondArray = [2, 3];
+            const composedArray = compose(firstArray).compose(secondArray);
+            assert(composedArray.value.length === 3);
+        });
     }
 };
