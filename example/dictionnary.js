@@ -32,27 +32,29 @@ import {compose} from '../index.js';
 // not tell you the same thing about the word "compose"
 // eccyclopedia would be ok because it's an ambitious dictionnary
 // but encyclopedia contains article more than definition & fact more than language explanation
-// const Dictionnary = compose({
-//     terms: [],
-//     constructor() {
+const Dictionnary = compose({
+    terms: [],
+    constructor(terms) {
+        if (terms) {
+            this.terms.push(...terms);
+        }
+    },
 
-//     },
-
-//     look(id, context) {
-//         // first find the term using this id
-//         const term = this.terms.find(function(term) {
-//             return term.id === id;
-//         });
-//         const contextualizedTerm = term.contextualize(context);
-//         return contextualizedTerm.definitions[0];
-//     }
-// });
+    look(id, context) {
+        // first find the term using this id
+        const term = this.terms.find(function(term) {
+            return term.id === id;
+        });
+        const contextualizedTerm = term.contextualize(context);
+        return contextualizedTerm.read();
+    }
+});
 const Term = compose({
     definitions: [],
     constructor(id, definitions) {
         this.id = id;
         if (definitions) {
-            this.definitions = definitions;
+            this.definitions.push(...definitions);
         }
     },
 
@@ -103,6 +105,9 @@ const LanguageCondition = Condition.compose({
 const greetingFRDefinition = Definition.construct('Bonjour', LanguageCondition.construct('fr'));
 const greetingENDefinition = Definition.construct('Hello', LanguageCondition.construct('en'));
 const greetingTerm = Term.construct('greetings', [greetingFRDefinition, greetingENDefinition]);
+const dict = Dictionnary.construct([
+    greetingTerm
+]);
 
-console.log(greetingTerm.contextualize({lang: 'fr'}).read()); // 'Bonjour'
-console.log(greetingTerm.contextualize({lang: 'en'}).read()); // 'Hello'
+console.log(dict.look('greetings', {lang: 'fr'})); // 'Bonjour'
+console.log(dict.look('greetings', {lang: 'en'})); // 'Hello'
