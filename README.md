@@ -1,7 +1,7 @@
 # lab
 
 Lab compose values into composite, providing composable and reusable behaviour.  
-It's under active developement.  
+This repository is under dev, nothing is stable or meant to be used by anyone for now.
 
 ## Example
 
