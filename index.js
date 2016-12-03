@@ -1,6 +1,6 @@
-import {scan, Infection} from './lib/lab.js';
-import './lib/primitive.js';
-import {ObjectElement} from './lib/composite.js';
+import {scan, Infection} from './src/lab.js';
+import './src/primitive.js';
+import {ObjectElement} from './src/composite.js';
 
 const baseElement = ObjectElement.create();
 // baseElement reaction let the secondObject prevails

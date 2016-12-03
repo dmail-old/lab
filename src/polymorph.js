@@ -74,19 +74,47 @@ const Variant = util.extend({
         return copy;
     }
 });
-const when = Variant.create.bind(Variant);
 const Polymorph = util.extend({
     constructor() {
+        // c'est vraiment un DynamicSwitch en fait
+        // c'est comme écrire un switch mais là on contrôle l'éxécution le nombre de case etc
+
+        /*
+        je pense qu'il faudras supprimer le fait qu'on utiilser un tableau
+        parce qu'on va avoir besoin qu'une méthode puisse hériter du comportement d'une autre
+        parce que sinon lorsque j'ai ma méthode par défaut
+        qui compose mais n'a pas de variante pour MapEntry
+        et qu'ensuite j'ajoute une variante pour mapEntry
+        si j'ai une maladie qui modifie un peu le comportement de compose par défaut
+        elle n'hérite pas de l'ajout de la variante
+
+        bon il reste le problème de l'ordre dans lequel les variantes marchents parce que
+        bindMethodConstruct redéfinissait l'ordre parce que sinon c'est la merde
+        hors si on hérite bah on est encore plus dans la merde niveau ordre des variantes
+
+        le truc c'est de réfléchir à quand les gens (moi y compris)
+        voudront rajouter des cas au polymorpah actuel
+        il faudras que ces cas soit pris en compte par les polymorph custom
+
+        const construct = polymorph();
+        const bindMethodConstruct = construct.derive();
+        construct.when(isANumber, doStuffWithNumber);
+        // et hop bindMethodConstruct récupèrera isANumber
+        // par contre que fait-on si le dérivé sdu polymorph ne souhaite pas récupérer le comportement du polymorph parent
+        // en gros c'est un peu tôt pour décider
+        */
+
         this.variants = [];
+        this.when = this.when.bind(this);
     },
 
-    morph(match, implementation) {
+    when(match, implementation) {
+        // note :
+        // si implementation existe on modifie son match et on replace variante existant par la nouvelle (ou on mutate la variante existante ?)
+        // si match existe on modifie implementation et on replace variante existante par la nouvelle (ou on mutate la variante existante?)
+        // si aucun n'existe on l'ajoute ça c'est ce qui est fait ci-dessous
         const variant = Variant.create(Matcher.create(match), implementation);
         this.variants.push(variant);
-    },
-
-    vary(...args) {
-        return this.morph(...args);
     },
 
     match(...args) {
@@ -101,7 +129,8 @@ const Polymorph = util.extend({
             const macthingVariant = polymorph.match(this, arguments);
             return macthingVariant.implementation.apply(this, arguments);
         };
-        // It would be convenient to exposed polymorph to be able to add/change/remove variant at runtime
+        // It would be convenient to expose polymorph or some method to be able to add/change/remove variant at runtime
+        dynamicMultipleDispatcher.when = polymorph.when;
 
         return dynamicMultipleDispatcher;
     }
@@ -111,87 +140,7 @@ const polymorph = function(...args) {
     poly.variants.push(...args);
     return poly.createDynamicMultipleDispatcher();
 };
+const when = Variant.create.bind(Variant);
 
-var ObjectElement;
-var Transformation;
-var ObjectPropertyElement;
-var CancelTransformation;
-
-const delegateObject = when(
-    function() {
-        return ObjectElement.isPrototypeOf(this);
-    },
-    function(parentNode, index) {
-        return Transformation.extend({
-            fill(element, elementModel) {
-                element.value = Object.create(elementModel.value);
-                element.importChildren(elementModel);
-            }
-        }).create(this, parentNode, index);
-    }
-);
-const defineObjectProperty = when(
-    function() {
-        if (ObjectPropertyElement.isPrototypeOf(this) === false) {
-            return false;
-        }
-        if (this.descriptor.hasOwnProperty('value')) {
-            const valueNode = this.valueNode;
-            if (ObjectElement.isPrototypeOf(valueNode)) {
-                return true;
-            }
-        }
-        return false;
-    },
-    function(parentNode, index) {
-        return Transformation.extend({
-            fill() {
-
-            }
-        }).create(this, parentNode, index);
-    }
-);
-const delegateOtherProperty = when(
-    function() {
-        return ObjectPropertyElement.isPrototypeOf(this);
-    },
-    function(parentNode, index) {
-        return CancelTransformation.create(this, parentNode, index);
-    }
-);
-const construct = polymorph(
-    delegateObject,
-    defineObjectProperty,
-    delegateOtherProperty
-);
-
-export default construct;
-
-// exemple de comment faire en sorte que element.construct se comporte différent
-// du comportement par défaut
-// const bindMethod = when(
-//     function(elementModel, parentNode) {
-//         return parentNode && FunctionElement.isPrototypeOf(this);
-//     },
-//     function(parentNode, index) {
-//         return Transformation.extend({
-//             fill(element, elementModel, parentNode) {
-//                 element.value = elementModel.value.bind(parentNode.value);
-//                 element.importChildren(elementModel);
-//             }
-//         }).create(this, parentNode, index);
-//     }
-// );
-// const defineObjectAndFunctionProperty = defineobjectProperty.when(
-//     // modifier le pattern pour y inclure les fonctions, pas besoin de changer l'implémentation
-// );
-// const bindMethodConstruct = polymorph(
-//     bindMethod,
-//     delegateObject,
-//     defineObjectAndFunctionProperty,
-//     delegateOtherProperty
-// );
-// element.infect({
-//     construct: bindMethodConstruct,
-//     transform: null
-// });
+export default polymorph;
+export {polymorph, when};

@@ -10,7 +10,6 @@
 // for now we ignore thoose exotic case
 
 import util from './util.js';
-import {Element} from './lab.js';
 
 /*
 transformation is used to express the transformation of an element into an other
@@ -29,18 +28,8 @@ const Transformation = util.extend({
         this.args = arguments;
     },
 
-    prepare() {
-        const product = this.maker(...this.args);
-        this.product = product;
-        return product;
-    },
-    maker() {},
-
-    transform() {
-        this.inserter(this.product, ...this.args);
-        this.filler(this.product, ...this.args);
-    },
-    inserter(product, element, parentElement) {
+    make() {},
+    move(product, element, parentElement) {
         if (parentElement) {
             if (element.parentNode === parentElement) {
                 parentElement.replaceChild(element, product);
@@ -49,123 +38,41 @@ const Transformation = util.extend({
             }
         }
     },
-    filler() {},
-
-    refine() {
-        const product = this.product;
-        this.packager(product, ...this.args);
-        this.compiler(product, ...this.args);
-
-        if (product) {
-            product.effect(...this.args);
-        }
-
-        return product;
-    },
-    packager() {},
-    compiler() {},
+    fill() {},
+    pack() {},
 
     produce() {
-        const product = this.prepare();
-        this.transform();
-        this.refine();
+        const args = this.args;
+        const product = this.make(...args);
+        this.move(product, ...args);
+        this.fill(product, ...args);
+        this.pack(product, ...args);
         return product;
     }
 });
 
 // reaction is a transformation involving two elements
 const Reaction = Transformation.extend({
-    inserter(product, element, reactingElement, parentElement) {
-        // ignore the reactionElement during insertion
-        Transformation.inserter.call(this, product, element, parentElement);
+    move(product, element, reactingElement, parentElement) {
+        // ignore the reactingElement during insertion
+        Transformation.move.call(this, product, element, parentElement);
     }
 });
 
 const CancelReaction = Transformation.extend({
-    inserter() {}
+    move() {}
 });
 
 const NoTransformation = Transformation.extend({
-    maker(element) {
+    make(element) {
         return element;
     },
     // je me demande si faut pas laisser inserter du coup
-    inserter() {}
+    move() {}
 });
 
-const CopyTransformation = Transformation.extend({
-    maker(element) {
-        return element.procreate();
-    },
-
-    filler(copy, ...args) {
-        copy.fillCopy(...args);
-    },
-
-    // empêche un élément copié d'avoir un effet, c'est pas propre mais comme ça
-    // peut empêcher la copie d'un tableau d'augmenter length
-    packager(copyOfElement, element) {
-        for (let constituent of element) {
-            const constituentTransformation = this.createNestedCopy(constituent, copyOfElement);
-            constituentTransformation.produce();
-        }
-        // si la copie est du à l'origine à une réaction cette copie à un effet parce que
-        // la structure n'existe pas encore
-        // en revanche si la copie est due à un transform
-        // cela signifie que la copie n'a aucun effet et dans ce cas
-        // n'a aucun effet
-        // du coup est ce que compose({}).compose() doit vraiment reproduire toute la structure ou juste retourner
-        // l'élément puisqu'il n'y a rien besoin de faire?
-        // copy n'est donc pas la transfo par défaut,
-        // le transfo par défaut c'est rien enfin plutot retourne soi-mêm
-    },
-
-    createNestedCopy(...args) {
-        return CopyTransformation.create(...args);
-    },
-
-    compiler(copy, ...args) {
-        copy.compileCopy(...args);
-    }
-});
-Element.refine({
-    fillCopy(element) {
-        this.value = element.value;
-    },
-    compileCopy() {
-
-    }
-});
-
-const CloneTransformation = Transformation.extend({
-    maker(element) {
-        return element.procreate();
-    },
-
-    filler(clone, ...args) {
-        clone.fillClone(...args);
-    },
-
-    packager(cloneOfElement, element) {
-        for (let constituent of element) {
-            const constituentTransformation = CloneTransformation.create(constituent, cloneOfElement);
-            constituentTransformation.produce();
-        }
-    },
-
-    compiler(clone, ...args) {
-        clone.compileClone(...args);
-    }
-});
-Element.refine({
-    fillClone(element) {
-        this.value = element.value;
-    },
-    compileClone() {
-
-    }
-});
-
+const CopyTransformation = Transformation.extend();
+const CloneTransformation = Transformation.extend();
 const VanishReaction = Reaction.extend({
     constructor(firstElement, secondElement) {
         // shouldn't we consider replace as using copy and not clone ?
