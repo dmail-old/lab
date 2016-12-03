@@ -22,7 +22,7 @@ const composite = compose(user);
 const instance = composite.construct();
 const instanceMethod = instance.method;
 
-instanceMethod(); // 'My name is undefined' -> because instanceMethod not bound to instance
+instanceMethod(); // 'My name is undefined' -> instanceMethod not bound to instance
 
 // now force composite to bind mehotd when calling composite.construct()
 const constructBindMethodMalady = maladies.constructBindMethod;
@@ -30,7 +30,7 @@ composite.infect(constructBindMethodMalady);
 const instanceFromInfectedConstruct = composite.construct();
 const boundInstanceMethod = instanceFromInfectedConstruct.method;
 
-boundInstanceMethod(); // 'My name is dam' -> because boundInstanceMethod is bound to instanceFromInfectedConstruct
+boundInstanceMethod(); // 'My name is dam' -> boundInstanceMethod bound to instanceFromInfectedConstruct
 ```
 
 ## The recommended way to infect your composite
@@ -56,18 +56,15 @@ customCompose(user).construct().method.call(null); // 'My name is dam'
 
 ## Existing maladies
 
-There is a set of existing maladies with their own behaviour.
-If the behaviour you desire ng malady let you do what you want the next section explains how to create your own malady.
+You can use the following exported maladies.  
+If what you want to do cannot be achieved with these you can [Create your own malady].
 
 name                    | short description of the behaviour                | documentation link
------------------------ | ------------------------------------------------- |
-default                 | Object.create in construct, immutable compose     |
-constructBindMethod     | default + bindMethod in construct
+----------------------- | ------------------------------------------------- | --------------------
+default                 | Object.create in construct, immutable compose     | 
+constructBindMethod     | default + bindMethod in construct                 | 
 
 ## Create your own malady
-
-A malady is a raw object holding a list of properties.
-If you want to understand deeply how malady are transmitted to composite see How infection works section below.
 
 ```javascript
 import {compose} from '@dmail/lab';
@@ -83,8 +80,9 @@ composite.infect(myMalady);
 composite.construct(); // 'Hello world'
 ```
 
-But you won't go very far with an 'Hello world' construct() method.
-To go further on the subject get your inspiration from existing custom malady source code, such as [constructBindMethod]().
+But you won't go very far with an 'Hello world' construct() method.  
+To go further on the subject get your inspiration from existing custom malady source code, such as [constructBindMethod]().  
+If you want to understand deeply how malady are transmitted to composite see How infection works section below.
 
 ## How infection works
 
@@ -92,13 +90,15 @@ A malady holds a list of properties that can be seen as symptoms of the malady. 
 
 Basically `Object.assign(composite, malady)` would lead to the same result at this stage.
 
-Infection comes with two more features
-	- once a composite gets infected by a malady, this malady is transmitted to its descendants
-	- you can cure an infected composite from a specific malady to revert symptoms
+Infection do a bit more because :
+- once a composite gets infected by a malady, this malady is transmitted to its descendants
+- you can cure an infected composite from a specific malady to revert symptoms
+
+*I'm aware infection transmission and ability to cure has no special meaning to the reader at this stage. It will be improved later*
 
 ## A final note
 
-Something to be aware of is that *composite infection is used internally*.
+Something to be aware of is that **composite infection is used internally**.  
 It means that composite behaviour is dicted by a default malady.
 
 ```javascript
