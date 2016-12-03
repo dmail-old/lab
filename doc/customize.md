@@ -1,38 +1,36 @@
-# Customizing composite behaviour for your needs
+# Customize composite behaviour
 
-You can drastically change composite behaviour using infection.
-See use case below showing how to bind every method to instance.
+You can make composite behave as you want using infection.  
+For instance you can force it to bind method to instance as shown below.
 
-## How to bind method to composite instance
+## bind method infection
 
-`composite.construct()` does not bind method to instance as the following will demonstrates.
-But by infecting composite behaviour we can force it to do so.
+The code below will demonstrates you can force `composite.construct()` to bind method to instance.
 
 ```javascript
 import {compose, maladies} from '@dmail/lab';
 
+// start from a user object with a method
 const user = {
 	name: 'dam',
 	method() {
 		console.log('My name is', this.name);
 	}
 };
+// first we'll see that instance method are not bound
 const composite = compose(user);
 const instance = composite.construct();
 const instanceMethod = instance.method;
 
-instanceMethod(); // 'My name is undefined'
+instanceMethod(); // 'My name is undefined' -> because instanceMethod not bound to instance
 
-// let's infect composite construct method to bound its methods
+// now force composite to bind mehotd when calling composite.construct()
 const constructBindMethodMalady = maladies.constructBindMethod;
 composite.infect(constructBindMethodMalady);
-const instanceCreatedByInfectedConstruct = composite.construct();
-const boundInstanceMethod = instanceCreatedByInfectedConstruct.method;
+const instanceFromInfectedConstruct = composite.construct();
+const boundInstanceMethod = instanceFromInfectedConstruct.method;
 
-boundInstanceMethod(); // 'My name is dam'
-
-// you can cure the composite to restore previous behaviour
-composite.cure(constructBindMethodMalady);
+boundInstanceMethod(); // 'My name is dam' -> because boundInstanceMethod is bound to instanceFromInfectedConstruct
 ```
 
 ## The recommended way to infect your composite
