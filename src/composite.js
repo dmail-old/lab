@@ -61,14 +61,6 @@ const ObjectElement = Element.extend('Object', createConstructedByProperties(Obj
 });
 // maybe rename compositePropertyElement
 const ObjectPropertyElement = Element.extend('ObjectProperty', {
-    effect() {
-        const object = this.parentNode;
-        if (object) {
-            // console.log('define property', this.name, '=', this.descriptor, 'on', object.value);
-            Object.defineProperty(object.value, this.name, this.descriptor);
-        }
-    },
-
     fill(descriptor) {
         this.descriptor = descriptor;
 
@@ -180,60 +172,7 @@ const ObjectPropertyElement = Element.extend('ObjectProperty', {
         };
     })()
 });
-Element.refine({
-    effect() {
-        const parentNode = this.parentNode;
-        if (ObjectPropertyElement.isPrototypeOf(parentNode)) {
-            if (parentNode.valueNode === this) {
-                parentNode.descriptor.value = this.value;
-            } else if (parentNode.getterNode === this) {
-                parentNode.descriptor.get = this.value;
-            } else if (parentNode.setterNode === this) {
-                parentNode.descriptor.set = this.value;
-            }
-        }
-    }
-});
-const ArrayElement = ObjectElement.extend('Array', createConstructedByProperties(Array), {
-    createProperty(name) {
-        return ArrayPropertyElement.create(name);
-    },
-
-    getPropertyTrackingEntries() {
-        return this.getProperty('length');
-    }
-});
-ObjectElement.refine({
-    getPropertyTrackingEntries() {
-        let trackingProperty;
-        const lengthProperty = this.getProperty('length');
-        if (lengthProperty) {
-            const value = lengthProperty.propertyValue;
-            if (typeof value === 'number') {
-                trackingProperty = lengthProperty;
-            } else {
-                trackingProperty = null;
-            }
-        } else {
-            trackingProperty = null;
-        }
-        return trackingProperty;
-    }
-});
-const ArrayPropertyElement = ObjectPropertyElement.extend('ArrayProperty');
-ArrayPropertyElement.refine({
-    effect() {
-        const parentNode = this.parentNode;
-        if (parentNode && this.isIndex()) {
-            const propertyTrackingEntries = parentNode.getPropertyTrackingEntries();
-            if (propertyTrackingEntries) {
-                propertyTrackingEntries.incrementValue();
-            }
-        }
-        return ObjectPropertyElement.effect.apply(this, arguments);
-    }
-});
-
+const ArrayElement = ObjectElement.extend('Array', createConstructedByProperties(Array));
 const BooleanElement = ObjectElement.extend('Boolean', createConstructedByProperties(Boolean));
 const NumberElement = ObjectElement.extend('Number', createConstructedByProperties(Number));
 const StringElement = ObjectElement.extend('String', createConstructedByProperties(String));
@@ -268,7 +207,6 @@ export {
     NumberElement,
     StringElement,
     ArrayElement,
-    ArrayPropertyElement,
     FunctionElement,
     ErrorElement,
     RegExpElement,

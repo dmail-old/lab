@@ -27,6 +27,12 @@ const Transformation = util.extend({
     constructor() {
         this.args = arguments;
     },
+    asMethod() {
+        const self = this;
+        return function(...args) {
+            return self.create(this, ...args);
+        };
+    },
 
     make() {},
     move(product, element, parentElement) {

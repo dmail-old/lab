@@ -4,34 +4,85 @@ raf
 les quelques reaction/transformation qui ne sont pas finalisées
 traiter effect() que je ne sais pas encore comment traiter avec cette nouvelle approche
 
-la fonction importChildren
-bon y'a juste un truc c'est que le fait de copier un élément forcait ses descendants à être copié
-je ne suis pas forcément daccord avec ça, copier un élément apelle transform sur ses decendants qui décide d'être copié ou cloné ou autre
-
-function importChildren(composite, otherComposite) {
-    for (let child of otherComposite) {
-        const constituentTransformation = constituent.transform(composite);
-        constituentTransformation.produce();
+effect de Element
+effect() {
+    const parentNode = this.parentNode;
+    if (ObjectPropertyElement.isPrototypeOf(parentNode)) {
+        if (parentNode.valueNode === this) {
+            parentNode.descriptor.value = this.value;
+        } else if (parentNode.getterNode === this) {
+            parentNode.descriptor.get = this.value;
+        } else if (parentNode.setterNode === this) {
+            parentNode.descriptor.set = this.value;
+        }
     }
 }
+
+effect de ObjectPropertyElement
+effect() {
+    const object = this.parentNode;
+    if (object) {
+        // console.log('define property', this.name, '=', this.descriptor, 'on', object.value);
+        Object.defineProperty(object.value, this.name, this.descriptor);
+    }
+}
+
+effect de ArrayPropertyElement (ça va fusionner avec ObjectProperty un truc du genre)
+effect() {
+    const parentNode = this.parentNode;
+    if (parentNode && this.isIndex()) {
+        const propertyTrackingEntries = parentNode.getPropertyTrackingEntries();
+        if (propertyTrackingEntries) {
+            propertyTrackingEntries.incrementValue();
+        }
+    }
+    return ObjectPropertyElement.effect.apply(this, arguments);
+}
+
+voir comment on pourras conservér le fait que compose peut s'apeller avec n argument
+alors qu'ensuite on va faire comme si on l'apelle avec un seul et éventuellement un parentNode en second
+et comment faire en sorte que le compose par défaut laisse prévaloir ce qui est passé que la source
+j'avais pensé à une sorte d'élément impossible à contruire genre pureElement
+dont la méthode construct throw en disant hey je dois être compose() dabord
+et dans le compose on laisse prévaloir le secondElement.procreate au lieu du premier
 */
 
 import {polymorph} from './polymorph.js';
 import {
     ObjectElement,
-    ObjectPropertyElement,
-    ArrayElement
+    ObjectPropertyElement
 } from './composite.js';
 import {
     Transformation,
     CopyTransformation,
     CloneTransformation,
     CancelTransformation,
-    NoTransformation,
+    // NoTransformation,
     Reaction,
     CancelReaction,
     VanishReaction
 } from './transformation.js';
+
+// const ComposeReaction = Reaction.extend({
+//     make(firstElement) {
+//         return firstElement.procreate();
+//     }
+// });
+// const CopyPropertyTransformation = CopyTransformation.extend({
+//     make(property) {
+//         const compositeProperty = property.procreate();
+//         compositeProperty.value = property.value;
+//         compositeProperty.descriptor = property.descriptor;
+
+//         return compositeProperty;
+//     },
+
+//     fill(compositeProperty, property) {
+//         for (let child of property) {
+//             child.transform(compositeProperty);
+//         }
+//     }
+// });
 
 const match = polymorph();
 const matchNull = match.when(
@@ -70,128 +121,40 @@ const transformPrimitive = transform.when(
     function() {
         return this.primitiveMark;
     },
-    function(parentNode, index) {
-        return CopyTransformation.create(this, parentNode, index);
-    }
+    CopyTransformation.asMethod()
 );
-const transformArray = transform.when(
-    function() {
-        ArrayElement.isPrototypeOf(this);
-    },
-    function(parentNode, index) {
-        return CloneTransformation.extend({
-            fill(array, arrayModel) {
-                array.value = [];
-                array.importChildren(arrayModel);
-            }
-        }).create(this, parentNode, index);
+const CloneCompositeTransformation = CloneTransformation.extend({
+    fill(composite, compositeModel) {
+        composite.value = new compositeModel.constructedBy(compositeModel.value.valueOf()); // eslint-disable-line new-cap
+        for (let child of compositeModel) {
+            child.transform(composite);
+        }
     }
-);
-const transformObject = transform.when(
-    function() {
-        // or this.tagName === 'Object'
-        return Object.getPrototypeOf(this) === ObjectElement;
-    },
-    function(parentNode, index) {
-        return CloneTransformation.extend({
-            fill(object, objectModel) {
-                object.value = {};
-                object.importChildren(objectModel);
-            }
-        }).create(this, parentNode, index);
-    }
-);
+});
 const transformComposite = transform.when(
     function() {
         return ObjectElement.isPrototypeOf(this);
     },
-    function(parentNode, index) {
-        return CloneTransformation.extend({
-            fill(composite, compositeModel) {
-                composite.value = new compositeModel.constructedBy(compositeModel.value.valueOf()); // eslint-disable-line new-cap
-                composite.importChildren(compositeModel);
-            }
-        }).create(this, parentNode, index);
-    }
+    CloneCompositeTransformation.asMethod()
 );
-const transformIndexedArrayProperty = transform.when(
-    function(parentNode, index) {
-        // we concat only the second array indexed properties
-        return (
-            ObjectPropertyElement.isPrototypeOf(this) &&
-            ArrayElement.isPrototypeOf(parentNode) &&
-            this.isIndex() &&
-            index > 0
-        );
-    },
-    function(parentNode, index) {
-        // ah oui ceci est dû au fait que la reaction peut être la concaténation
-        // mais en fait le code ci-dessous va sûrement passer dans le cas reactWith de deux arrayProperty
-        return CopyTransformation.extend({
-            fill(arrayProperty, arrayPropertyModel, parentNode) {
-                // parentElement can be :
-                // - an object when you compose object + array and it becomes an array like after composition
-                // - an arraylike when you composed object + array or that the object was already an array like
-                // - an array when you compose array + array
-                // as a consequence we check if parentELement has a property trackingEntries we can use to concat
-                // when we copy a copied array which was frozen we got a prob
-
-                // we must concat not using parentElement because its the subject of the concatenation
-                // we must use parentElement component
-                const propertyTrackingEntries = parentNode.firstComponent.getPropertyTrackingEntries();
-
-                if (propertyTrackingEntries) {
-                    // the length property is available on refine, before that the copied array does not have any property
-                    // when combining object + array the result is an object so it's does not have a length property
-                    // he will get the length property from the combined array but it's not available already if length
-                    // property is not the first copied property
-                    // moreover you may compose arrayLike with array
-                    // and in that case arrayLike have a length property that will be set during combineObject.refine()
-                    const length = propertyTrackingEntries.propertyValue;
-                    const conflictualIndex = Number(arrayProperty.name);
-                    const concatenedIndex = conflictualIndex + length;
-                    const concatenedIndexAsString = String(concatenedIndex);
-
-                    arrayProperty.value = concatenedIndexAsString;
-                    // if (debugArrayConcat) {
-                    //     console.log('index updated from', conflictualIndex, 'to', concatenedIndex);
-                    // }
-                } else {
-                    arrayProperty.value = arrayPropertyModel.value;
-                }
-
-                arrayProperty.descriptor = Object.assign({}, arrayPropertyModel.descriptor);
-                // during importChildren, import them using NoTransformation (why??)
-                // this is the purpose of createNestedCopy below
-                arrayProperty.importChildren(arrayPropertyModel);
-            },
-
-            createNestedCopy(...args) {
-                return NoTransformation.create(...args);
-            }
-        }).create(this, parentNode, index);
+const ClonePropertyTransformation = CloneTransformation.extend({
+    fill(property, propertyModel) {
+        property.value = propertyModel.value;
+        property.descriptor = Object.assign({}, propertyModel.descriptor);
+        for (let child of propertyModel) {
+            child.transform(property);
+        }
     }
-);
+});
 const transformProperty = transform.when(
     function() {
         return ObjectPropertyElement.isPrototypeOf(this);
     },
-    function(parentNode, index) {
-        return CloneTransformation.extend({
-            fill(property, propertyModel) {
-                property.value = propertyModel.value;
-                property.descriptor = Object.assign({}, propertyModel.descriptor);
-                property.importChildren(propertyModel);
-            }
-        }).create(this, parentNode, index);
-    }
+    ClonePropertyTransformation.asMethod()
 );
 export {
     transformPrimitive,
-    transformArray,
-    transformObject,
     transformComposite,
-    transformIndexedArrayProperty,
     transformProperty
 };
 
@@ -200,163 +163,251 @@ const reactSomePrimitive = react.when(
     function(element) {
         return this.primitiveMark || element.primitiveMark;
     },
-    function(element, parentNode, value) {
-        return VanishReaction.create(this, element, parentNode, value);
+    function(element, parentNode) {
+        return VanishReaction.create(this, element, parentNode);
     }
 );
+const ComposeObjectReaction = Reaction.extend({
+    make(firstObject, secondObject) {
+        const compositeObject = firstObject.procreate();
+        compositeObject.firstComponent = firstObject;
+        compositeObject.secondComponent = secondObject;
+
+        return compositeObject;
+    },
+
+    fill(compositeObject, firstComponent, secondComponent) {
+        const compositeValue = new compositeObject.constructedBy(); // eslint-disable-line new-cap
+        const ownProperties = compositeObject.readProperties(compositeValue);
+
+        compositeObject.value = compositeValue;
+
+        // afin d'obtenir un objet final ayant ses propriétés dans l'ordre le plus logique possible
+        // on a besoin de plusieurs étapes pour s'assurer que
+        // - les propriétés présentent sur l'objet restent définies avant les autres
+        // - les propriétés du premier composant sont définies avant celles du second
+
+        // 1 : traite les propriétées existantes en conflit avec firstComponent
+        const unhandledFirstProperties = firstComponent.children.slice();
+        let firstPropertyIndex = 0;
+        for (let firstProperty of firstComponent) {
+            const ownProperty = this.findConflictualProperty(ownProperties, firstProperty);
+            if (ownProperty) {
+                unhandledFirstProperties.splice(firstPropertyIndex, 1);
+                this.handlePropertyCollision(compositeObject, ownProperty, firstProperty);
+            }
+            firstPropertyIndex++;
+        }
+        // 2: traite les propriétées existantes en conflit avec secondComponent
+        const unhandledSecondProperties = secondComponent.children.slice();
+        let secondPropertyIndex = 0;
+        for (let secondProperty of secondComponent) {
+            const ownProperty = this.findConflictualProperty(ownProperties, secondProperty);
+            if (ownProperty) {
+                unhandledSecondProperties.splice(secondPropertyIndex, 1);
+                this.handlePropertyCollision(compositeObject, ownProperty, secondProperty);
+            }
+            secondPropertyIndex++;
+        }
+        // 3: traite les propriétés de firstComponent en conflit avec secondComponent
+        let unhandledFirstPropertyIndex = 0;
+        for (let unhandledFirstProperty of unhandledFirstProperties) {
+            const secondProperty = this.findConflictualProperty(unhandledSecondProperties, unhandledFirstProperty);
+            if (secondProperty) {
+                unhandledFirstProperties.splice(unhandledFirstPropertyIndex, 1);
+                this.handlePropertyCollision(compositeObject, unhandledFirstProperty, secondProperty);
+            }
+            unhandledFirstPropertyIndex++;
+        }
+        // 4: traite les propriétés de secondComponent en conflit avec firstComponent
+        // (si la détection de conflit se fait sur le nom cette boucle ne sers à rien puisqe l'étape 3 est équivalente)
+        let unhandledSecondPropertyIndex = 0;
+        for (let unhandledSecondProperty of unhandledSecondProperties) {
+            const firstProperty = this.findConflictualProperty(unhandledFirstProperties, unhandledSecondProperty);
+            if (firstProperty) {
+                unhandledSecondProperties.splice(unhandledSecondPropertyIndex, 1);
+                this.handlePropertyCollision(compositeObject, firstProperty, unhandledSecondProperty);
+            }
+            unhandledSecondPropertyIndex++;
+        }
+        // 5: traite les propriétés de firstComponent sans conflit
+        for (let unhandledFirstProperty of unhandledFirstProperties) {
+            this.handleNewProperty(compositeObject, unhandledFirstProperty);
+        }
+        // 6: traite les propriétés de secondComponent sans conflit
+        for (let unhandledSecondProperty of unhandledSecondProperties) {
+            this.handleNewProperty(compositeObject, unhandledSecondProperty);
+        }
+    },
+
+    findConflictualProperty(properties, possiblyConflictualProperty) {
+        return properties.find(function(property) {
+            return this.detectPropertyConflict(property, possiblyConflictualProperty);
+        }, this);
+    },
+
+    detectPropertyConflict(property, otherProperty) {
+        return property.name === otherProperty.name;
+    },
+
+    handlePropertyCollision(compositeObject, property, conflictualProperty) {
+        // here we could impvoe perf by finding the appropriat reaction and if the reaction
+        // is to clone currentProperty we can do nothing because it's already there
+        const reaction = property.reactWith(conflictualProperty, compositeObject);
+        const importedProperty = reaction.produce();
+        return importedProperty;
+    },
+
+    handleNewProperty(compositeObject, property) {
+        const transformation = property.transform(compositeObject);
+        const importedProperty = transformation.produce();
+        return importedProperty;
+    },
+
+    pack() {
+        // console.log('freeze the composite', compositeObject.value);
+        // Object.freeze(compositeObject.value);
+        // cannot freeze, else instance got writable: false
+        // and writing instance.property = value will throw
+    }
+});
 const reactBothComposite = react.when(
     function(otherElement) {
-        return ObjectElement.isPrototypeOf(this) && ObjectElement.isPrototypeOf(otherElement);
-    },
-    function(compositeElement, parentNode, index) {
-        return Reaction.extend({
-            make(firstObject, secondObject) {
-                const compositeObject = firstObject.procreate();
-                compositeObject.firstComponent = firstObject;
-                compositeObject.secondComponent = secondObject;
-
-                return compositeObject;
-            },
-
-            fill(compositeObject, firstComponent, secondComponent) {
-                compositeObject.value = {};
-                compositeObject.readProperties(compositeObject.value);
-
-                const ownProperties = compositeObject.children;
-                const unhandledSecondProperties = secondComponent.children.slice();
-                for (let firstProperty of firstComponent) {
-                    const ownPropertyIndex = this.findConflictualPropertyIndex(ownProperties, firstProperty);
-                    if (ownPropertyIndex > -1) {
-                        const ownProperty = ownProperties[ownPropertyIndex];
-                        firstProperty = this.handlePropertyCollision(compositeObject, ownProperty, firstProperty);
-                        if (!firstProperty) {
-                            continue;
-                        }
-                    }
-
-                    const secondPropertyIndex = this.findConflictualPropertyIndex(
-                        unhandledSecondProperties,
-                        firstProperty
-                    );
-                    if (secondPropertyIndex === -1) {
-                        this.handleNewProperty(compositeObject, firstProperty, 0);
-                    } else {
-                        // handle the conflict and mark the property as handled
-                        const conflictualSecondProperty = unhandledSecondProperties[secondPropertyIndex];
-                        unhandledSecondProperties.splice(secondPropertyIndex, 1);
-                        this.handlePropertyCollision(compositeObject, firstProperty, conflictualSecondProperty);
-                    }
-                }
-
-                for (let secondProperty of unhandledSecondProperties) {
-                    const ownPropertyIndex = this.findConflictualPropertyIndex(ownProperties, secondProperty);
-                    if (ownPropertyIndex > -1) {
-                        const ownProperty = ownProperties[ownPropertyIndex];
-                        this.handlePropertyCollision(compositeObject, ownProperty, secondProperty);
-                    } else {
-                        this.handleNewProperty(compositeObject, secondProperty, 1);
-                    }
-                }
-            },
-
-            findConflictualPropertyIndex(properties, possiblyConflictualProperty) {
-                return properties.findIndex(function(property) {
-                    return this.detectPropertyConflict(property, possiblyConflictualProperty);
-                }, this);
-            },
-
-            detectPropertyConflict(property, otherProperty) {
-                return property.name === otherProperty.name;
-            },
-
-            handlePropertyCollision(compositeObject, property, conflictualProperty) {
-                // here we could impvoe perf by finding the appropriat reaction and if the reaction
-                // is to clone currentProperty we can do nothing because it's already there
-                const reaction = property.reactWith(conflictualProperty, compositeObject);
-                const importedProperty = reaction.produce();
-                return importedProperty;
-            },
-
-            handleNewProperty(compositeObject, property, index) {
-                const transformation = property.transform(compositeObject, index);
-                const importedProperty = transformation.produce();
-                return importedProperty;
-            },
-
-            pack() {
-                // console.log('freeze the composite', compositeObject.value);
-                // Object.freeze(compositeObject.value);
-                // cannot freeze, else instance got writable: false
-                // and writing instance.property = value will throw
-            }
-        }).create(this, compositeElement, parentNode, index);
-    }
-);
-const reactBothPropertyInsideArray = react.when(
-    function(otherProperty, parentNode) {
-        return ObjectPropertyElement.isPrototypeOf(this) && ArrayElement.isPrototypeOf(parentNode);
-    },
-    function() {
-        // en gros il faut modifier combineObject pour changer detectPropertyConflict
-        // par celui ci-dessous
-
-        // detectPropertyConflict(property, otherProperty) {
-        //     const propertyHaveSameName = property.name === otherProperty.name;
-        //     // ignore conflict when two indexed property wants to be concatened
-        //     if (propertyHaveSameName && property.isIndex()) {
-        //         if (debugArrayConcat) {
-        //             console.log('ignoring conflict for', this.descriptor.value, 'because it will be concatened');
-        //         }
-        //         return false;
-        //     }
-        //     return propertyHaveSameName;
-        // }
-    }
-);
-const reactArrayLengthInsideUntrackedLength = react.when(
-    function(otherProperty, parentNode) {
-        // on doit s'assurer soit que length est la dernière propriété que l'on met
-        // soit que incrementValue met à jour length avec effect()
-        // parce qu'on est pas sur que la valeur finale de length
-        // soit bien firstLength + secondLength
-        // il suffit qu'une des entrées du tableau ne souhaite pas être concat pour tout niquer
-
         return (
-            ObjectPropertyElement.isPrototypeOf(this) &&
-            ArrayElement.isPrototypeOf(this.parentNode) &&
-            this.name === 'length' &&
-            !parentNode.getPropertyTrackingEntries()
+            ObjectElement.isPrototypeOf(this) &&
+            ObjectElement.isPrototypeOf(otherElement)
         );
     },
-    function() {
-        // faudrais réutiliser combineProperty enfin ptet ou pas en tous cas on doit reset length à zéro
-        return Reaction.extend({
-            fill() {
-                this.value = 0;
-            }
-        });
-    }
+    ComposeObjectReaction.asMethod()
 );
-const reactArrayLength = react.when(
-    function() {
-        // we disable reaction concerning the length property as it would mutate the array
-        // instead we manually increase the length property when indexed property are added
-        // because length property is non configurable by default this check is not mandatory
-        // as length would be ignored by SafeCombineProperty
-        // but this is "luck" so don't rely on luck, be explicit
-        // if tomorrow JS engine decide length property is configurable this will still work
 
+/*
+Explication sur le cas spécial de la propriété length
+Chacun des deux éléments composé peut être un array, arraylike ou composite
+array:  lorsque la propriété length appartient à un objet Array
+arraylike : lorsqu'un object a une propriété length qui est une valeur numérique
+compositeValue : un objet sans propriété length ou alors celle-ci est un accesseur n'a pas une valeur numérique valide
+
+Et voici ce qu'on fait pour chaque cas
+array compose array|arraylike|compositeValue
+    -> la propriété length existe déjà sur composite.value, elle est ignoré (CancelReaction)
+arraylike compose array|arraylike|composite
+    -> la propriété length n'existe pas encore sur composite.value, elle est reset
+    à sa valeur initiale (le nombre actuel de propriété indexé sur composite.value, en général ce sera 0)
+compositeValue compose array|arraylike
+    -> compositeValue récupèrera la propriété length de array ou arraylike, en faisant ainsi un arraylike
+    la valeur de la propriété length est alors mise à jour pour tenir compte des propriétés indexés du composite
+compositeValue compose compositeValue
+    -> si elle existe la propriété length est passé sans logique particulière
+*/
+function isCountTrackerValue(element) {
+    // we should check the value is an integer between 0 and max allowed length
+    return element.valueNode.tagName === 'number';
+}
+function isCountTracker(element) {
+    return (
+        ObjectPropertyElement.isPrototypeOf(element) &&
+        element.name === 'length' &&
+        element.descriptor.hasOwnProperty('value') &&
+        isCountTrackerValue(element.valueNode)
+    );
+}
+function hasLengthPropertyWhichIsCountTracker(element) {
+    const lengthProperty = element.getProperty('length');
+    return (
+        lengthProperty &&
+        lengthProperty.descriptor.hasOwnProperty('value') &&
+        isCountTrackerValue(lengthProperty.valueNode)
+    );
+}
+// this case exists because array length property is not configurable
+// because of that we cannot redefine it when composing array with arraylike
+// so when there is a already a length property assume it's in sync
+const reactCountTrackerWithExisting = react.when(
+    function(otherProperty, parentNode) {
         return (
-            ObjectPropertyElement.isPrototypeOf(this) &&
-            ArrayElement.isPrototypeOf(this.parentNode) &&
-            this.name === 'length'
+            isCountTracker(this) &&
+            hasLengthPropertyWhichIsCountTracker(parentNode)
         );
     },
-    function() {
-        return CancelReaction.create();
-    }
+    CancelReaction.asMethod()
 );
-const reactUnconfigurableProperty = react.when(
+// when a count tracker value becomes the child of a composite
+// it must reflects its current amount of indexed properties
+// this logic does not even belong to transform or react, it more inside effect()
+// const ComposeCountTrackerValue = ComposeReaction.extend({
+//     fill(compositeCount, firstCount, secondCount, parentNode) {
+//         // we cannot just set it to zero in case length property is added
+//         // after indexed properties, so check if there is already indexed properties
+//         // this value will be auto incremented by other logic if any indexed property are added after this
+//         compositeCount.value = parentNode.children.reduce(function(previous, current) {
+//             if (ObjectPropertyElement.isPrototypeOf(current) && current.isIndex()) {
+//                 previous++;
+//             }
+//             return previous;
+//         }, 0);
+//     }
+// });
+// const reactWithCountTrackerValue = react.when(
+//     function(otherElement) {
+//         return (
+//             isCountTracker(otherElement.parentNode)
+//         );
+//     },
+//     ComposeBothCountTrackerValue.asMethod()
+// );
+// now concatenation, it's pretty simple, when both have a count tracker they are concatenable
+// if so this propertyCountTracker is used to concat properties
+const debugArrayConcat = false;
+const TransformConcatProperty = CopyTransformation.extend({
+    fill(indexedProperty, parentNode) {
+        CopyTransformation.fill.apply(this, arguments);
+        const length = parentNode.getProperty('length').propertyValue;
+
+        if (length > 0) {
+            const currentIndex = Number(indexedProperty.name);
+            const concatenedIndex = currentIndex + length;
+            const concatenedIndexAsString = String(concatenedIndex);
+
+            indexedProperty.value = concatenedIndexAsString;
+            if (debugArrayConcat) {
+                console.log('index updated from', currentIndex, 'to', concatenedIndex);
+            }
+        }
+    }
+});
+const ConcatReaction = ComposeObjectReaction.extend({
+    findConflictualProperty(properties, possiblyConflictualProperty) {
+        if (possiblyConflictualProperty.isIndex()) {
+            if (debugArrayConcat) {
+                console.log(
+                    'ignoring conflict for',
+                    possiblyConflictualProperty.descriptor.value,
+                    'because it will be concatened'
+                );
+            }
+            return false;
+        }
+        return ComposeObjectReaction.findConflictualProperty.apply(this, arguments);
+    },
+
+    handleNewProperty(compositeObject, property) {
+        if (property.isIndex()) {
+            return TransformConcatProperty.create(property, compositeObject).produce();
+        }
+        return ComposeObjectReaction.handleNewProperty.apply(this, arguments);
+    }
+});
+const reactBothConcatenable = react.when(
+    function(otherElement) {
+        return (
+            hasLengthPropertyWhichIsCountTracker(this) &&
+            hasLengthPropertyWhichIsCountTracker(otherElement)
+        );
+    },
+    ConcatReaction.asMethod()
+);
+const reactUnconfigurableExistingProperty = react.when(
     function(otherProperty, parentNode) {
         // this case happens with array length property
         // or function name property, in that case we preserve the current property of the compositeObject
@@ -367,83 +418,88 @@ const reactUnconfigurableProperty = react.when(
             this.parentNode === parentNode
         );
     },
-    function() {
-        return CancelReaction.create();
-    }
+    CancelReaction.asMethod()
 );
+const ComposePropertyReaction = Reaction.extend({
+    make(firstProperty, secondProperty) {
+        // const firstName = firstProperty.name;
+        const secondName = secondProperty.name;
+        const combinedName = secondName;
+        const compositeProperty = firstProperty.procreate();
+        compositeProperty.value = combinedName;
+        // const firstDescriptor = firstProperty.descriptor;
+        const secondDescriptor = secondProperty.descriptor;
+        const compositeDescriptor = Object.assign({}, secondDescriptor);
+        compositeProperty.descriptor = compositeDescriptor;
+
+        return compositeProperty;
+    },
+
+    fill(compositeProperty, firstComponent, secondComponent) {
+        const firstDescriptor = firstComponent.descriptor;
+        const secondDescriptor = secondComponent.descriptor;
+        const firstType = firstDescriptor.hasOwnProperty('value') ? 'value' : 'accessor';
+        const secondType = secondDescriptor.hasOwnProperty('value') ? 'value' : 'accessor';
+        const compositePropertyType = firstType + '-' + secondType;
+
+        if (compositePropertyType === 'value-value') {
+            this.handleConstituant(compositeProperty, 'valueNode', firstComponent, secondComponent);
+        } else if (compositePropertyType === 'accessor-value') {
+            this.handleConstituant(compositeProperty, 'valueNode', secondComponent);
+        } else if (compositePropertyType === 'value-accessor') {
+            this.handleConstituant(compositeProperty, 'getterNode', secondComponent);
+            this.handleConstituant(compositeProperty, 'setterNode', secondComponent);
+        } else if (compositePropertyType === 'accessor-accessor') {
+            this.handleConstituant(compositeProperty, 'getterNode', firstComponent, secondComponent);
+            this.handleConstituant(compositeProperty, 'setterNode', firstComponent, secondComponent);
+        }
+    },
+
+    handleConstituant(compositeProperty, constituantName, firstComponent, secondComponent) {
+        const firstConstituant = firstComponent[constituantName];
+        if (firstConstituant) {
+            const secondConstituant = secondComponent ? secondComponent[constituantName] : null;
+
+            let reaction;
+            if (firstConstituant && secondConstituant) {
+                reaction = this.handleConstituantReaction(
+                    compositeProperty,
+                    firstConstituant,
+                    secondConstituant,
+                    constituantName
+                );
+            } else if (firstComponent) {
+                reaction = firstConstituant.transform(compositeProperty);
+            }
+
+            reaction.produce();
+        }
+    },
+
+    handleConstituantReaction(compositeProperty, firstConstituant, secondConstituant) {
+        return firstConstituant.reactWith(secondConstituant, compositeProperty);
+    }
+});
 const reactBothProperty = react.when(
     function(otherElement) {
-        return ObjectPropertyElement.isPrototypeOf(this) && ObjectPropertyElement.isPrototypeOf(otherElement);
+        return (
+            ObjectPropertyElement.isPrototypeOf(this) &&
+            ObjectPropertyElement.isPrototypeOf(otherElement)
+        );
     },
-    function(otherProperty, parentNode, index) {
-        return Reaction.extend({
-            make(firstProperty, secondProperty) {
-                // const firstName = firstProperty.name;
-                const secondName = secondProperty.name;
-                const combinedName = secondName;
-                const compositeProperty = firstProperty.procreate(combinedName);
-                // const firstDescriptor = firstProperty.descriptor;
-                const secondDescriptor = secondProperty.descriptor;
-                const compositeDescriptor = Object.assign({}, secondDescriptor);
-                compositeProperty.descriptor = compositeDescriptor;
-
-                return compositeProperty;
-            },
-
-            fill(compositeProperty, firstComponent, secondComponent) {
-                const firstDescriptor = firstComponent.descriptor;
-                const secondDescriptor = secondComponent.descriptor;
-                const firstType = firstDescriptor.hasOwnProperty('value') ? 'value' : 'accessor';
-                const secondType = secondDescriptor.hasOwnProperty('value') ? 'value' : 'accessor';
-                const compositePropertyType = firstType + '-' + secondType;
-
-                if (compositePropertyType === 'value-value') {
-                    this.handleConstituant(compositeProperty, 'valueNode', firstComponent, secondComponent);
-                } else if (compositePropertyType === 'accessor-value') {
-                    this.handleConstituant(compositeProperty, 'valueNode', secondComponent);
-                } else if (compositePropertyType === 'value-accessor') {
-                    this.handleConstituant(compositeProperty, 'getterNode', secondComponent);
-                    this.handleConstituant(compositeProperty, 'setterNode', secondComponent);
-                } else if (compositePropertyType === 'accessor-accessor') {
-                    this.handleConstituant(compositeProperty, 'getterNode', firstComponent, secondComponent);
-                    this.handleConstituant(compositeProperty, 'setterNode', firstComponent, secondComponent);
-                }
-            },
-
-            handleConstituant(compositeProperty, constituantName, firstComponent, secondComponent) {
-                const firstConstituant = firstComponent[constituantName];
-                if (firstConstituant) {
-                    const secondConstituant = secondComponent ? secondComponent[constituantName] : null;
-
-                    let reaction;
-                    if (firstConstituant && secondConstituant) {
-                        reaction = this.handleConstituantReaction(
-                            compositeProperty,
-                            firstConstituant,
-                            secondConstituant,
-                            constituantName
-                        );
-                    } else if (firstComponent) {
-                        reaction = firstConstituant.transform(compositeProperty);
-                    }
-
-                    reaction.produce();
-                }
-            },
-
-            handleConstituantReaction(compositeProperty, firstConstituant, secondConstituant) {
-                return firstConstituant.reactWith(secondConstituant, compositeProperty);
-            }
-        }).create(this, otherProperty, parentNode, index);
-    }
+    ComposePropertyReaction.asMethod()
 );
+react.prefer(
+    reactBothConcatenable,
+    reactBothComposite
+);
+
 export {
     reactSomePrimitive,
     reactBothComposite,
-    reactBothPropertyInsideArray,
-    reactArrayLengthInsideUntrackedLength,
-    reactArrayLength,
-    reactUnconfigurableProperty,
+    reactBothConcatenable,
+    reactCountTrackerWithExisting,
+    reactUnconfigurableExistingProperty,
     reactBothProperty
 };
 
@@ -464,16 +520,11 @@ const createObject = construct.when(
 );
 const defineObjectProperty = construct.when(
     function() {
-        if (ObjectPropertyElement.isPrototypeOf(this) === false) {
-            return false;
-        }
-        if (this.descriptor.hasOwnProperty('value')) {
-            const valueNode = this.valueNode;
-            if (ObjectElement.isPrototypeOf(valueNode)) {
-                return true;
-            }
-        }
-        return false;
+        return (
+            ObjectPropertyElement.isPrototypeOf(this) &&
+            this.descriptor.hasOwnProperty('value') &&
+            ObjectElement.isPrototypeOf(this.valueNode)
+        );
     },
     function(parentNode, index) {
         return Transformation.extend({

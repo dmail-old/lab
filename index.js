@@ -1,3 +1,14 @@
+/*
+une méthode augment en plus de construct qui fait comme construct
+mais apellera constructor sur l'objet qu'on lui passe ?
+ou plutot fait construct mais au lieu de retourner l'instance fait cela :
+
+construct return instanceComposite.value;
+au lieu de cela on fera
+return Lab.scan(valueToAugment).compose(instanceComposite).value;
+cela permettras d'ajouter les méthode du composite à un objet existant
+*/
+
 import {scan, Infection} from './src/lab.js';
 import './src/primitive.js';
 import {ObjectElement} from './src/composite.js';

@@ -16,6 +16,11 @@ Double/Multiple dispatch: the implementation to call depends on object type & fu
 Applied to JavaScript it means we'll have a polymorphed function that will decide what will be called
 depending on this and arguments
 to make it easyly configurable every implementation will be named to be able to change his behaviour later
+
+ajouter any()
+ajouter prefer()
+ajouter without()
+
 */
 
 // pattern
@@ -117,6 +122,35 @@ const Polymorph = util.extend({
         this.variants.push(variant);
     },
 
+    prefer(...variants) {
+        this.variants = this.variants.sort(function(a, b) {
+            const aIndex = variants.indexOf(a);
+            if (aIndex === -1) {
+                return -1;
+            }
+            const bIndex = variants.indexOf(b);
+            if (bIndex === -1) {
+                return 1;
+            }
+            return aIndex - bIndex;
+        });
+        return this;
+    },
+
+    with(...variants) {
+        return this.createConstructor(this.variants.push(...variants).map(function(variant) {
+            return variant.when();
+        }));
+    },
+
+    without(...variants) {
+        return this.createConstructor(this.variants.filter(function(variant) {
+            return variants.indexOf(variant) === -1;
+        }).map(function(variant) {
+            return variant.when();
+        }));
+    },
+
     match(...args) {
         return this.variants.find(function(variant) {
             return variant.match(...args);
@@ -127,10 +161,14 @@ const Polymorph = util.extend({
         const polymorph = this;
         const dynamicMultipleDispatcher = function() {
             const macthingVariant = polymorph.match(this, arguments);
-            return macthingVariant.implementation.apply(this, arguments);
+            const result = macthingVariant.implementation.apply(this, arguments);
+            return result;
         };
         // It would be convenient to expose polymorph or some method to be able to add/change/remove variant at runtime
         dynamicMultipleDispatcher.when = polymorph.when;
+        dynamicMultipleDispatcher.prefer = polymorph.prefer;
+        dynamicMultipleDispatcher.with = polymorph.with;
+        dynamicMultipleDispatcher.without = polymorph.without;
 
         return dynamicMultipleDispatcher;
     }
