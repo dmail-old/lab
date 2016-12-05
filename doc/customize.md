@@ -1,11 +1,11 @@
 # Customize composite behaviour
 
 You can make composite behave as you want using infection.  
-For instance you can force it to bind method to instance as shown below.
+Check below the example with method binding.
 
 ## bind method infection
 
-The code below will demonstrates you can force `composite.construct()` to bind method to instance.
+The code below will demonstrates you can force `composite.construct()` to produce bound methods.
 
 ```javascript
 import {compose, maladies} from '@dmail/lab';
@@ -17,20 +17,20 @@ const user = {
 		console.log('My name is', this.name);
 	}
 };
-// first we'll see that instance method are not bound
+// first we'll demonstrate method is not bound
 const composite = compose(user);
 const instance = composite.construct();
 const instanceMethod = instance.method;
 
-instanceMethod(); // 'My name is undefined' -> instanceMethod not bound to instance
+instanceMethod(); // 'My name is undefined' -> because instanceMethod not bound
 
-// now force composite to bind mehotd when calling composite.construct()
+// next line force composite to bind method to their owner
 const constructBindMethodMalady = maladies.constructBindMethod;
 composite.infect(constructBindMethodMalady);
 const instanceFromInfectedConstruct = composite.construct();
 const boundInstanceMethod = instanceFromInfectedConstruct.method;
 
-boundInstanceMethod(); // 'My name is dam' -> boundInstanceMethod bound to instanceFromInfectedConstruct
+boundInstanceMethod(); // 'My name is dam' -> because boundInstanceMethod is bound
 ```
 
 ## The recommended way to infect your composite
