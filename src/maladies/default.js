@@ -1,67 +1,42 @@
 /*
 raf
 
-les quelques reaction/transformation qui ne sont pas finalisées
-traiter effect() que je ne sais pas encore comment traiter avec cette nouvelle approche
-
-effect de Element
-effect() {
-    const parentNode = this.parentNode;
-    if (ObjectPropertyElement.isPrototypeOf(parentNode)) {
-        if (parentNode.valueNode === this) {
-            parentNode.descriptor.value = this.value;
-        } else if (parentNode.getterNode === this) {
-            parentNode.descriptor.get = this.value;
-        } else if (parentNode.setterNode === this) {
-            parentNode.descriptor.set = this.value;
-        }
-    }
-}
-
-effect de ObjectPropertyElement
-effect() {
-    const object = this.parentNode;
-    if (object) {
-        // console.log('define property', this.name, '=', this.descriptor, 'on', object.value);
-        Object.defineProperty(object.value, this.name, this.descriptor);
-    }
-}
-
-effect de ArrayPropertyElement (ça va fusionner avec ObjectProperty un truc du genre)
-effect() {
-    const parentNode = this.parentNode;
-    if (parentNode && this.isIndex()) {
-        const propertyTrackingEntries = parentNode.getPropertyTrackingEntries();
-        if (propertyTrackingEntries) {
-            propertyTrackingEntries.incrementValue();
-        }
-    }
-    return ObjectPropertyElement.effect.apply(this, arguments);
-}
-
-voir comment on pourras conservér le fait que compose peut s'apeller avec n argument
-alors qu'ensuite on va faire comme si on l'apelle avec un seul et éventuellement un parentNode en second
-et comment faire en sorte que le compose par défaut laisse prévaloir ce qui est passé que la source
-j'avais pensé à une sorte d'élément impossible à contruire genre pureElement
-dont la méthode construct throw en disant hey je dois être compose() dabord
-et dans le compose on laisse prévaloir le secondElement.procreate au lieu du premier
 */
 
-import {polymorph} from './polymorph.js';
+import {polymorph} from '../polymorph.js';
+import {Element} from '../lab.js';
 import {
     ObjectElement,
     ObjectPropertyElement
-} from './composite.js';
+} from '../composite.js';
 import {
     Transformation,
-    CopyTransformation,
-    CloneTransformation,
-    CancelTransformation,
-    // NoTransformation,
-    Reaction,
-    CancelReaction,
-    VanishReaction
-} from './transformation.js';
+    Reaction
+} from '../transformation.js';
+
+function isCountTrackerValue(element) {
+    // we should check the value is an integer between 0 and max allowed length
+    return element.valueNode.tagName === 'number';
+}
+function isCountTracker(element) {
+    return (
+        ObjectPropertyElement.isPrototypeOf(element) &&
+        element.name === 'length' &&
+        element.descriptor.hasOwnProperty('value') &&
+        isCountTrackerValue(element.valueNode)
+    );
+}
+function hasLengthPropertyWhichIsCountTracker(element) {
+    if (ObjectElement.isPrototypeOf(element) === false) {
+        return false;
+    }
+    const lengthProperty = element.getProperty('length');
+    return (
+        lengthProperty &&
+        lengthProperty.descriptor.hasOwnProperty('value') &&
+        isCountTrackerValue(lengthProperty.valueNode)
+    );
+}
 
 // const ComposeReaction = Reaction.extend({
 //     make(firstElement) {
@@ -85,7 +60,7 @@ import {
 // });
 
 const match = polymorph();
-const matchNull = match.when(
+const matchNull = match.branch(
     function() {
         return this.tagName === 'null';
     },
@@ -94,7 +69,7 @@ const matchNull = match.when(
     }
 );
 ['boolean', 'number', 'string', 'symbol', 'undefined'].forEach(function(primitiveName) {
-    match.when(
+    match.branch(
         function() {
             return this.tagName === primitiveName;
         },
@@ -103,7 +78,7 @@ const matchNull = match.when(
         }
     );
 });
-const matchConstructedBy = match.when(
+const matchConstructedBy = match.branch(
     function() {
         return this.hasOwnProperty('constructedBy');
     },
@@ -116,22 +91,86 @@ export {
     matchConstructedBy
 };
 
+const make = polymorph();
+// now useless
+// make.branch(
+//     function(secondElement) {
+//         return (
+//             Object.getPrototypeOf(this) === Element &&
+//             Boolean(secondElement)
+//         );
+//     },
+//     function(secondElement) {
+//         // pureElement reaction let the second element prevails
+//         return secondElement.createConstructor.apply(this, arguments);
+//     }
+// );
+make.branch(
+    null,
+    function() {
+        return this.createConstructor.apply(this, arguments);
+    }
+);
+
+const cloneValue = polymorph();
+cloneValue.branch(
+    function() {
+        return this.tagName === 'Object';
+    },
+    function() {
+        return {};
+    }
+);
+cloneValue.branch(
+    function() {
+        return this.tagName === 'Array';
+    },
+    function() {
+        return [];
+    }
+);
+cloneValue.branch(
+    function() {
+        return ObjectElement.isPrototypeOf(this);
+    },
+    function() {
+        return new this.constructedBy(this.value.valueOf()); // eslint-disable-line new-cap
+    }
+);
+
 const transform = polymorph();
-const transformPrimitive = transform.when(
+const CopyTransformation = Transformation.extend({
+    make(element) {
+        return element.make();
+    },
+
+    fill(element, elementModel) {
+        element.value = elementModel.value;
+        for (let child of elementModel) {
+            child.transform(element);
+        }
+    }
+});
+const transformPrimitive = transform.branch(
     function() {
         return this.primitiveMark;
     },
     CopyTransformation.asMethod()
 );
+const CloneTransformation = Transformation.extend({
+    make(element) {
+        return element.make();
+    }
+});
 const CloneCompositeTransformation = CloneTransformation.extend({
     fill(composite, compositeModel) {
-        composite.value = new compositeModel.constructedBy(compositeModel.value.valueOf()); // eslint-disable-line new-cap
+        composite.value = compositeModel.cloneValue();
         for (let child of compositeModel) {
             child.transform(composite);
         }
     }
 });
-const transformComposite = transform.when(
+const transformComposite = transform.branch(
     function() {
         return ObjectElement.isPrototypeOf(this);
     },
@@ -146,7 +185,7 @@ const ClonePropertyTransformation = CloneTransformation.extend({
         }
     }
 });
-const transformProperty = transform.when(
+const transformProperty = transform.branch(
     function() {
         return ObjectPropertyElement.isPrototypeOf(this);
     },
@@ -158,18 +197,106 @@ export {
     transformProperty
 };
 
+const effect = polymorph();
+// when the produced element in inside a property it impacts its property descriptor
+effect.when(
+    function() {
+        return (
+            this.parentNode &&
+            ObjectPropertyElement.isPrototypeOf(this.parentNode)
+        );
+    },
+    function() {
+        const property = this.parentNode;
+        if (this === property.valueNode) {
+            property.descriptor.value = this.value;
+        } else if (this === property.getterNode) {
+            property.descriptor.get = this.value;
+        } else if (this === property.setterNode) {
+            property.descriptor.set = this.value;
+        }
+    }
+);
+// when the produced element is a property it impacts the parent composite by setting the property on it
+effect.when(
+    function() {
+        return (
+            ObjectPropertyElement.isPrototypeOf(this) &&
+            this.parentNode
+        );
+    },
+    function() {
+        const composite = this.parentNode;
+        // console.log('define property', this.name, '=', this.descriptor, 'on', object.value);
+        Object.defineProperty(composite.value, this.name, this.descriptor);
+    }
+);
+// the following case is disabled because freezing the value has an impact so that doing
+// instance = Object.create(this.value); instance.property = true; will throw
+// effect.when(
+//     function() {
+//         return ObjectElement.isPrototypeOf(this);
+//     },
+//     function() {
+//         Object.freeze(this.value);
+//     }
+// );
+// when the produced element is an indexed property, increment the property count tracker value
+const incrementLength = effect.when(
+    function() {
+        return (
+            ObjectPropertyElement.isPrototypeOf(this) &&
+            this.parentNode &&
+            hasLengthPropertyWhichIsCountTracker(this.parentNode)
+        );
+    },
+    function() {
+        this.parentNode.getProperty('length').incrementValue();
+    }
+);
+effect.prefer(incrementLength);
+// when a count tracker value becomes the child of a composite
+// it must reflects its current amount of indexed properties
+const syncLengthValue = effect.when(
+    function() {
+        return (
+            this.parentNode &&
+            isCountTracker(this.parentNode)
+        );
+    },
+    function() {
+        this.value = this.parentNode.children.reduce(function(previous, current) {
+            if (ObjectPropertyElement.isPrototypeOf(current) && current.isIndex()) {
+                previous++;
+            }
+            return previous;
+        }, 0);
+    }
+);
+// always syncLengthValue doing sthing else
+effect.prefer(syncLengthValue);
+
 const react = polymorph();
-const reactSomePrimitive = react.when(
+const VanishReaction = Reaction.extend({
+    constructor(firstElement, secondElement, parentNode) {
+        return secondElement.transform(parentNode);
+    }
+});
+react.branch(
+    function() {
+        return Object.getPrototypeOf(this) === Element;
+    },
+    VanishReaction.asMethod()
+);
+const reactSomePrimitive = react.branch(
     function(element) {
         return this.primitiveMark || element.primitiveMark;
     },
-    function(element, parentNode) {
-        return VanishReaction.create(this, element, parentNode);
-    }
+    VanishReaction.asMethod()
 );
 const ComposeObjectReaction = Reaction.extend({
     make(firstObject, secondObject) {
-        const compositeObject = firstObject.procreate();
+        const compositeObject = firstObject.make(secondObject);
         compositeObject.firstComponent = firstObject;
         compositeObject.secondComponent = secondObject;
 
@@ -253,7 +380,7 @@ const ComposeObjectReaction = Reaction.extend({
     handlePropertyCollision(compositeObject, property, conflictualProperty) {
         // here we could impvoe perf by finding the appropriat reaction and if the reaction
         // is to clone currentProperty we can do nothing because it's already there
-        const reaction = property.reactWith(conflictualProperty, compositeObject);
+        const reaction = property.react(conflictualProperty, compositeObject);
         const importedProperty = reaction.produce();
         return importedProperty;
     },
@@ -262,16 +389,9 @@ const ComposeObjectReaction = Reaction.extend({
         const transformation = property.transform(compositeObject);
         const importedProperty = transformation.produce();
         return importedProperty;
-    },
-
-    pack() {
-        // console.log('freeze the composite', compositeObject.value);
-        // Object.freeze(compositeObject.value);
-        // cannot freeze, else instance got writable: false
-        // and writing instance.property = value will throw
     }
 });
-const reactBothComposite = react.when(
+const reactBothComposite = react.branch(
     function(otherElement) {
         return (
             ObjectElement.isPrototypeOf(this) &&
@@ -300,30 +420,14 @@ compositeValue compose array|arraylike
 compositeValue compose compositeValue
     -> si elle existe la propriété length est passé sans logique particulière
 */
-function isCountTrackerValue(element) {
-    // we should check the value is an integer between 0 and max allowed length
-    return element.valueNode.tagName === 'number';
-}
-function isCountTracker(element) {
-    return (
-        ObjectPropertyElement.isPrototypeOf(element) &&
-        element.name === 'length' &&
-        element.descriptor.hasOwnProperty('value') &&
-        isCountTrackerValue(element.valueNode)
-    );
-}
-function hasLengthPropertyWhichIsCountTracker(element) {
-    const lengthProperty = element.getProperty('length');
-    return (
-        lengthProperty &&
-        lengthProperty.descriptor.hasOwnProperty('value') &&
-        isCountTrackerValue(lengthProperty.valueNode)
-    );
-}
+
 // this case exists because array length property is not configurable
 // because of that we cannot redefine it when composing array with arraylike
 // so when there is a already a length property assume it's in sync
-const reactCountTrackerWithExisting = react.when(
+const CancelReaction = Reaction.extend({
+    produce() {} // no nothing
+});
+const reactCountTrackerWithExisting = react.branch(
     function(otherProperty, parentNode) {
         return (
             isCountTracker(this) &&
@@ -332,32 +436,6 @@ const reactCountTrackerWithExisting = react.when(
     },
     CancelReaction.asMethod()
 );
-// when a count tracker value becomes the child of a composite
-// it must reflects its current amount of indexed properties
-// this logic does not even belong to transform or react, it more inside effect()
-// const ComposeCountTrackerValue = ComposeReaction.extend({
-//     fill(compositeCount, firstCount, secondCount, parentNode) {
-//         // we cannot just set it to zero in case length property is added
-//         // after indexed properties, so check if there is already indexed properties
-//         // this value will be auto incremented by other logic if any indexed property are added after this
-//         compositeCount.value = parentNode.children.reduce(function(previous, current) {
-//             if (ObjectPropertyElement.isPrototypeOf(current) && current.isIndex()) {
-//                 previous++;
-//             }
-//             return previous;
-//         }, 0);
-//     }
-// });
-// const reactWithCountTrackerValue = react.when(
-//     function(otherElement) {
-//         return (
-//             isCountTracker(otherElement.parentNode)
-//         );
-//     },
-//     ComposeBothCountTrackerValue.asMethod()
-// );
-// now concatenation, it's pretty simple, when both have a count tracker they are concatenable
-// if so this propertyCountTracker is used to concat properties
 const debugArrayConcat = false;
 const TransformConcatProperty = CopyTransformation.extend({
     fill(indexedProperty, parentNode) {
@@ -398,7 +476,7 @@ const ConcatReaction = ComposeObjectReaction.extend({
         return ComposeObjectReaction.handleNewProperty.apply(this, arguments);
     }
 });
-const reactBothConcatenable = react.when(
+const reactBothConcatenable = react.branch(
     function(otherElement) {
         return (
             hasLengthPropertyWhichIsCountTracker(this) &&
@@ -407,13 +485,14 @@ const reactBothConcatenable = react.when(
     },
     ConcatReaction.asMethod()
 );
-const reactUnconfigurableExistingProperty = react.when(
+const reactUnconfigurableExistingProperty = react.branch(
     function(otherProperty, parentNode) {
         // this case happens with array length property
         // or function name property, in that case we preserve the current property of the compositeObject
         // console.log('own property is not configurable, cannot make it react');
 
         return (
+            ObjectPropertyElement.isPrototypeOf(this) &&
             this.descriptor.configurable === false &&
             this.parentNode === parentNode
         );
@@ -425,7 +504,7 @@ const ComposePropertyReaction = Reaction.extend({
         // const firstName = firstProperty.name;
         const secondName = secondProperty.name;
         const combinedName = secondName;
-        const compositeProperty = firstProperty.procreate();
+        const compositeProperty = firstProperty.make(secondProperty);
         compositeProperty.value = combinedName;
         // const firstDescriptor = firstProperty.descriptor;
         const secondDescriptor = secondProperty.descriptor;
@@ -477,10 +556,10 @@ const ComposePropertyReaction = Reaction.extend({
     },
 
     handleConstituantReaction(compositeProperty, firstConstituant, secondConstituant) {
-        return firstConstituant.reactWith(secondConstituant, compositeProperty);
+        return firstConstituant.react(secondConstituant, compositeProperty);
     }
 });
-const reactBothProperty = react.when(
+const reactBothProperty = react.branch(
     function(otherElement) {
         return (
             ObjectPropertyElement.isPrototypeOf(this) &&
@@ -504,7 +583,15 @@ export {
 };
 
 const construct = polymorph();
-const createObject = construct.when(
+construct.branch(
+    function() {
+        return Object.getPrototypeOf(this) === Element;
+    },
+    function() {
+        throw new Error('pure element cannot be constructed');
+    }
+);
+const createObject = construct.branch(
     function() {
         return ObjectElement.isPrototypeOf(this);
     },
@@ -518,7 +605,7 @@ const createObject = construct.when(
         }).create(this, parentNode, index);
     }
 );
-const defineObjectProperty = construct.when(
+const defineObjectProperty = construct.branch(
     function() {
         return (
             ObjectPropertyElement.isPrototypeOf(this) &&
@@ -534,15 +621,16 @@ const defineObjectProperty = construct.when(
         }).create(this, parentNode, index);
     }
 );
-const delegateOtherProperty = construct.when(
+const CancelTransformation = Transformation.extend({
+    produce() {}
+});
+const delegateOtherProperty = construct.branch(
     function() {
         return ObjectPropertyElement.isPrototypeOf(this);
     },
-    function(parentNode, index) {
-        return CancelTransformation.create(this, parentNode, index);
-    }
+    CancelTransformation.asMethod()
 );
-const createPrimitive = construct.when(
+const createPrimitive = construct.branch(
     function() {
         return this.primitiveMark;
     },
@@ -559,8 +647,11 @@ export {
 
 const defaultMalady = {
     match: match,
+    make: make,
+    cloneValue: cloneValue,
     transform: transform,
     react: react,
+    effect: effect,
     construct: construct
 };
 

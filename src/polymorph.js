@@ -17,11 +17,23 @@ Applied to JavaScript it means we'll have a polymorphed function that will decid
 depending on this and arguments
 to make it easyly configurable every implementation will be named to be able to change his behaviour later
 
-ajouter any()
-ajouter prefer()
-ajouter without()
-
 */
+
+/*
+// https://en.wikipedia.org/wiki/Branch_(computer_science)
+api finale :
+
+const behaviour = polymorph();
+
+behaviour.branch(condition, sequence);
+behaviour.branch(null, sequence); (unconditional branch)
+behaviour.when(condition, sequence); (conditional sequences but not a branch!)
+behaviour.when(null, sequence); (unconditional sequence))
+
+behaviour.match(...args) // return array of instruction matching (unconditionals are also returned)
+behaviour.prefer(...instructions) // change l'ordre des instructions
+behaviour.without(...instructions) // enlève certaines instructions
+behaviour.with(...instructions) // ajoute des instructions créé en amont
 
 // pattern
 // patternMatching
@@ -29,61 +41,55 @@ ajouter without()
 // selectPattern
 // characteristic
 // multimethod, multifunction multidispatcj
+*/
 
 import util from './util.js';
 
-const Matcher = util.extend({
-    constructor(match) {
-        if (match) {
-            this.match = match;
-        }
+const Instruction = util.extend({
+    constructor(sequence) {
+        this.sequence = sequence;
     },
-
+    exclusive: false,
     match() {
-        return false;
-    },
-
-    clone() {
-        const clone = this.createConstructor(this.match);
-        return clone;
-    },
-
-    from(...args) {
-        if (Matcher.isPrototypeOf(arguments[0])) {
-            return arguments[0];
-        }
-        return Matcher.create(...args);
+        throw new Error('must be implemented');
     }
 });
-const Variant = util.extend({
-    constructor(matcher, implementation) {
-        // we should check matcher & implementation are of the right type
-        this.matcher = Matcher.from(matcher);
-        this.implementation = implementation;
-    },
-    matcher: Matcher.create(),
-    implementation() {},
 
-    match(...args) {
-        return this.matcher.match(...args);
+const ConditionnableInstructionProperties = {
+    // cannot make constructor a shared properties (I think)
+    // because every objet must have its own constructor
+    match(bind, args) {
+        const condition = this.condition;
+        if (condition === null) {
+            return true;
+        }
+        return condition.apply(bind, args);
     },
 
-    when(matcher, implementation) {
-        if (matcher === undefined || matcher === null) {
-            matcher = this.matcher;
-        }
-        if (implementation === undefined || implementation === null) {
-            implementation = this.implementation;
-        }
-        const copy = this.createConstructor(matcher, implementation);
-        return copy;
+    when(condition) {
+        this.condition = condition;
+        return this;
+    }
+};
+
+const Sequence = Instruction.extend(ConditionnableInstructionProperties, {
+    exclusive: false,
+    constructor(condition, sequence) {
+        this.condition = condition;
+        Instruction.constructor.call(this, sequence);
     }
 });
-const Polymorph = util.extend({
+
+const Branch = Instruction.extend(ConditionnableInstructionProperties, {
+    exclusive: true,
+    constructor(condition, sequence) {
+        this.condition = condition;
+        Instruction.constructor.call(this, sequence);
+    }
+});
+
+const Behaviour = util.extend({
     constructor() {
-        // c'est vraiment un DynamicSwitch en fait
-        // c'est comme écrire un switch mais là on contrôle l'éxécution le nombre de case etc
-
         /*
         je pense qu'il faudras supprimer le fait qu'on utiilser un tableau
         parce qu'on va avoir besoin qu'une méthode puisse hériter du comportement d'une autre
@@ -109,76 +115,190 @@ const Polymorph = util.extend({
         // en gros c'est un peu tôt pour décider
         */
 
-        this.variants = [];
-        this.when = this.when.bind(this);
+        for (let methodName of this.methodToBind) {
+            this[methodName] = this[methodName].bind(this);
+        }
+        this.instructions = [];
     },
 
-    when(match, implementation) {
+    // create a branch, you go into that branch if
+    branch(condition, sequence) {
         // note :
         // si implementation existe on modifie son match et on replace variante existant par la nouvelle (ou on mutate la variante existante ?)
         // si match existe on modifie implementation et on replace variante existante par la nouvelle (ou on mutate la variante existante?)
         // si aucun n'existe on l'ajoute ça c'est ce qui est fait ci-dessous
-        const variant = Variant.create(Matcher.create(match), implementation);
-        this.variants.push(variant);
+        const branchInstruction = Branch.create(condition, sequence);
+        this.instructions.push(branchInstruction);
+        return branchInstruction;
     },
 
-    prefer(...variants) {
-        this.variants = this.variants.sort(function(a, b) {
-            const aIndex = variants.indexOf(a);
+    when(condition, sequence) {
+        const sequenceInstruction = Sequence.create(condition, sequence);
+        this.instructions.push(sequenceInstruction);
+        return sequenceInstruction;
+    },
+
+    prefer(...instructions) {
+        this.instructions = this.instructions.sort(function(a, b) {
+            const aIndex = instructions.indexOf(a);
             if (aIndex === -1) {
-                return -1;
-            }
-            const bIndex = variants.indexOf(b);
-            if (bIndex === -1) {
                 return 1;
             }
-            return aIndex - bIndex;
+            const bIndex = instructions.indexOf(b);
+            if (bIndex === -1) {
+                return -1;
+            }
+            return bIndex - aIndex;
         });
         return this;
     },
 
-    with(...variants) {
-        return this.createConstructor(this.variants.push(...variants).map(function(variant) {
-            return variant.when();
-        }));
+    with(...instructions) {
+        return this.createConstructor(this.instructions.push(...instructions));
     },
 
-    without(...variants) {
-        return this.createConstructor(this.variants.filter(function(variant) {
-            return variants.indexOf(variant) === -1;
-        }).map(function(variant) {
-            return variant.when();
+    without(...instructions) {
+        return this.createConstructor(this.instructions.filter(function(instruction) {
+            return instructions.indexOf(instruction) === -1;
         }));
     },
 
     match(...args) {
-        return this.variants.find(function(variant) {
-            return variant.match(...args);
+        return this.instructions.filter(function(instruction) {
+            return instruction.match(...args);
         });
     },
 
-    createDynamicMultipleDispatcher() {
-        const polymorph = this;
-        const dynamicMultipleDispatcher = function() {
-            const macthingVariant = polymorph.match(this, arguments);
-            const result = macthingVariant.implementation.apply(this, arguments);
+    createExecutionFlowController() {
+        const behaviour = this;
+        const executionFlowController = function() {
+            let result;
+            for (let instruction of behaviour.instructions) {
+                if (instruction.match(this, arguments)) {
+                    result = instruction.sequence.apply(this, arguments);
+                    if (instruction.exclusive) {
+                        break;
+                    }
+                }
+            }
             return result;
         };
-        // It would be convenient to expose polymorph or some method to be able to add/change/remove variant at runtime
-        dynamicMultipleDispatcher.when = polymorph.when;
-        dynamicMultipleDispatcher.prefer = polymorph.prefer;
-        dynamicMultipleDispatcher.with = polymorph.with;
-        dynamicMultipleDispatcher.without = polymorph.without;
-
-        return dynamicMultipleDispatcher;
+        for (let methodName of this.methodToBind) {
+            executionFlowController[methodName] = this[methodName];
+        }
+        return executionFlowController;
     }
 });
+Behaviour.methodToBind = Object.keys(Behaviour).filter(function(name) {
+    return (
+        name !== 'constructor' &&
+        name !== 'createExecutionFlowController' &&
+        typeof Behaviour[name] === 'function'
+    );
+});
+
 const polymorph = function(...args) {
-    const poly = Polymorph.create();
-    poly.variants.push(...args);
-    return poly.createDynamicMultipleDispatcher();
+    const behaviour = Behaviour.create();
+    behaviour.instructions.push(...args);
+    return behaviour.createExecutionFlowController();
 };
-const when = Variant.create.bind(Variant);
+const when = Sequence.create.bind(Sequence);
+const branch = Branch.create.bind(Branch);
 
 export default polymorph;
-export {polymorph, when};
+export {polymorph, when, branch};
+
+export const test = {
+    modules: ['@node/assert'],
+
+    main(assert) {
+        this.add('branch', function() {
+            const method = polymorph();
+
+            method.branch(
+                function() {
+                    return this.name === 'dam';
+                },
+                function() {
+                    return 'yo';
+                }
+            );
+            method.branch(
+                function() {
+                    return this.name === 'seb';
+                },
+                function() {
+                    return 'hey';
+                }
+            );
+
+            var dam = {
+                name: 'dam',
+                method: method
+            };
+            var seb = {
+                name: 'seb',
+                method: method
+            };
+
+            assert(dam.method() === 'yo');
+            assert(seb.method() === 'hey');
+        });
+
+        this.add('branch + sequence', function() {
+            // ensure sequence are executed in serie when they match
+
+            const method = polymorph();
+
+            method.when(
+                function() {
+                    return this.name === 'dam';
+                },
+                function() {
+                    this.gender = 'male';
+                }
+            );
+            method.when(
+                function() {
+                    return this.name === 'sandra';
+                },
+                function() {
+                    this.gender = 'female';
+                }
+            );
+            method.when(
+                function() {
+                    return this.gender === 'male';
+                },
+                function() {
+                    this.strength++;
+                }
+            );
+            method.branch(
+                function() {
+                    return this.gender === 'male';
+                },
+                function() {
+                    return 'male';
+                }
+            );
+            var dam = {
+                name: 'dam',
+                strength: 0,
+                method: method
+            };
+            var sandra = {
+                name: 'sandra',
+                strength: 0,
+                method: method
+            };
+
+            assert(dam.method() === 'male');
+            assert(dam.gender === 'male');
+            assert(dam.strength === 1);
+            assert(sandra.method() === undefined);
+            assert(sandra.gender === 'female');
+            assert(sandra.strength === 0);
+        });
+    }
+};

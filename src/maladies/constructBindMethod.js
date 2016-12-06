@@ -4,7 +4,9 @@ import {Transformation} from './transformation.js';
 import {createObject, defineObjectProperty, delegateOtherProperty} from './default.js';
 
 // exemple de comment faire en sorte que element.construct se comporte différent
-// du comportement par défaut
+// pour plus tard : pouvoir ne bind que les méthodes pour lesquelles une fonction custom retourne true
+// pour cela il faudrais que la maladie puisse être configuré, c'est plutot simple à faire
+// mais c'est pour plus tard
 const bindMethod = when(
     function(elementModel, parentNode) {
         return parentNode && FunctionElement.isPrototypeOf(this);

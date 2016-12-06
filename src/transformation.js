@@ -45,7 +45,9 @@ const Transformation = util.extend({
         }
     },
     fill() {},
-    pack() {},
+    pack(product, ...args) {
+        product.effect(...args);
+    },
 
     produce() {
         const args = this.args;
@@ -65,32 +67,23 @@ const Reaction = Transformation.extend({
     }
 });
 
-const CancelReaction = Transformation.extend({
-    move() {}
-});
+// const CancelReaction = Transformation.extend({
+//     move() {}
+// });
 
-const NoTransformation = Transformation.extend({
-    make(element) {
-        return element;
-    },
-    // je me demande si faut pas laisser inserter du coup
-    move() {}
-});
+// const NoTransformation = Transformation.extend({
+//     make(element) {
+//         return element;
+//     },
+//     // je me demande si faut pas laisser inserter du coup
+//     move() {}
+// });
 
-const CopyTransformation = Transformation.extend();
-const CloneTransformation = Transformation.extend();
-const VanishReaction = Reaction.extend({
-    constructor(firstElement, secondElement) {
-        // shouldn't we consider replace as using copy and not clone ?
-        return CopyTransformation.create(secondElement);
-    }
-});
-
-const ReverseVanishReaction = Reaction.extend({
-    constructor(firstElement, secondElement) {
-        return VanishReaction.create(secondElement, firstElement);
-    }
-});
+// const ReverseVanishReaction = Reaction.extend({
+//     constructor(firstElement, secondElement) {
+//         return VanishReaction.create(secondElement, firstElement);
+//     }
+// });
 
 /*
 const PrevailReaction = Reaction.extend({
@@ -104,70 +97,13 @@ const PrevailReaction = Reaction.extend({
 });
 */
 
-const createDynamicReaction = function(...args) {
-    const matchers = args.filter(function(arg) {
-        return typeof arg === 'function';
-    });
-    const reactions = args.filter(function(arg) {
-        return typeof arg !== 'function';
-    });
-
-    return Reaction.extend({
-        constructor(...reactionArgs) {
-            const matchIndex = matchers.findIndex(function(matcher) {
-                return matcher(...reactionArgs);
-            });
-
-            let reaction;
-            if (matchIndex === -1) {
-                reaction = reactions[reactions.length - 1];
-            } else {
-                reaction = reactions[matchIndex];
-            }
-
-            return reaction.create(...reactionArgs);
-        }
-    });
-};
-
-const createDynamicTransformation = function(...args) {
-    const matchers = args.filter(function(arg) {
-        return typeof arg === 'function';
-    });
-    const transformations = args.filter(function(arg) {
-        return typeof arg !== 'function';
-    });
-
-    return Transformation.extend({
-        constructor(...transformationArgs) {
-            const matchIndex = matchers.findIndex(function(matcher) {
-                return matcher(...transformationArgs);
-            });
-
-            let transformation;
-            if (matchIndex === -1) {
-                transformation = transformations[transformations.length - 1];
-            } else {
-                transformation = transformations[matchIndex];
-            }
-
-            return transformation.create(...transformationArgs);
-        }
-    });
-};
-
 export {
     Transformation,
-    NoTransformation,
-    CopyTransformation,
-    CloneTransformation,
-    createDynamicTransformation,
-    Reaction,
-    CancelReaction,
-    VanishReaction,
-    ReverseVanishReaction,
+    // NoTransformation,
+    Reaction
+    // CancelReaction
+    // ReverseVanishReaction,
     // PrevailReaction,
-    createDynamicReaction
 };
 
 /*

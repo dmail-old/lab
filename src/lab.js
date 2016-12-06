@@ -91,73 +91,11 @@ const Lab = util.extend({
 const scan = Lab.scan.bind(Lab);
 
 const Element = Node.extend({
-    match() {
-        return false;
-    },
-
     extend(tagName, ...args) {
         const Element = util.extend.apply(this, args);
         Element.tagName = tagName;
         Lab.register(Element, this);
         return Element;
-    }
-});
-
-Element.refine({
-    reactWith(secondElement, parentNode) {
-        const firstElement = this.asElement();
-        let reaction = firstElement.reaction;
-
-        return reaction.create(firstElement, secondElement, parentNode);
-    },
-
-    transform(parentNode, index) {
-        // je dois trouver l'infection qui se déclenche lorsque j'utilise transform
-        // et la déclencher temporairement, le temps de la transformation
-        // on pourrais même imaginer ne pas déclencher l'infection juste la récupérer
-        // et utiliser les méthodes qui sont dessus
-        // au final on ne déclencherait jamais l'infection bref à voir
-        // this.health.
-
-        const transformation = this.transformation.create(this, parentNode, index);
-        return transformation;
-    },
-
-    asElement() {
-        // pointerNode will return the pointedElement
-        // doing ctrl+c & ctrl+v on a symlink on windows copy the symlinked file and not the symlink
-        return this;
-    },
-
-    effect() {}
-});
-
-Element.refine({
-    compose() {
-        let composite;
-        if (arguments.length === 0) {
-            let transformation = this.transform();
-            let product = transformation.produce();
-            composite = product;
-        } else {
-            let i = 0;
-            let j = arguments.length;
-            composite = this;
-            for (;i < j; i++) {
-                const arg = arguments[i];
-                let element;
-                if (Element.isPrototypeOf(arg)) {
-                    element = arg;
-                } else {
-                    element = scan(arg);
-                }
-                let reaction = composite.reactWith(element);
-                let product = reaction.produce();
-                composite = product;
-            }
-        }
-
-        return composite;
     }
 });
 
@@ -177,6 +115,7 @@ purify
 propagate
 propagation
 */
+/*
 const debugInfection = !true;
 const debugInfectionTranmission = debugInfection && false;
 const Infection = util.extend({
@@ -444,6 +383,9 @@ Element.refine({
     }
 });
 
+export {Infection};
+*/
+
 /*
 const ElementInfection = Infection.extend({
     constructor(elementPrototype, symptoms) {
@@ -626,7 +568,6 @@ match()
 export {
     Element,
     Lab,
-    scan,
-    Infection
+    scan
 };
 export default Lab;
