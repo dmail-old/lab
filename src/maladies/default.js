@@ -157,14 +157,15 @@ const transformPrimitive = transform.branch(
     },
     CopyTransformation.asMethod()
 );
-const CloneTransformation = Transformation.extend({
+const CloneCompositeTransformation = Transformation.extend({
     make(element) {
         return element.make();
-    }
-});
-const CloneCompositeTransformation = CloneTransformation.extend({
+    },
+
     fill(composite, compositeModel) {
-        composite.value = compositeModel.cloneValue();
+        const compositeValue = compositeModel.cloneValue();
+        composite.value = compositeValue;
+        composite.readProperties(compositeValue);
         for (let child of compositeModel) {
             child.transform(composite);
         }
@@ -176,7 +177,11 @@ const transformComposite = transform.branch(
     },
     CloneCompositeTransformation.asMethod()
 );
-const ClonePropertyTransformation = CloneTransformation.extend({
+const ClonePropertyTransformation = Transformation.extend({
+    make(property) {
+        return property.make();
+    },
+
     fill(property, propertyModel) {
         property.value = propertyModel.value;
         property.descriptor = Object.assign({}, propertyModel.descriptor);
@@ -227,7 +232,7 @@ effect.when(
     },
     function() {
         const composite = this.parentNode;
-        // console.log('define property', this.name, '=', this.descriptor, 'on', object.value);
+        // console.log('set', this.name, '=', this.descriptor.value, 'on', composite.value);
         Object.defineProperty(composite.value, this.name, this.descriptor);
     }
 );
@@ -295,6 +300,8 @@ const reactSomePrimitive = react.branch(
     VanishReaction.asMethod()
 );
 const ComposeObjectReaction = Reaction.extend({
+    debug: !true,
+
     make(firstObject, secondObject) {
         const compositeObject = firstObject.make(secondObject);
         compositeObject.firstComponent = firstObject;
@@ -304,7 +311,8 @@ const ComposeObjectReaction = Reaction.extend({
     },
 
     fill(compositeObject, firstComponent, secondComponent) {
-        const compositeValue = new compositeObject.constructedBy(); // eslint-disable-line new-cap
+        const debug = this.debug;
+        const compositeValue = compositeObject.cloneValue();
         const ownProperties = compositeObject.readProperties(compositeValue);
 
         compositeObject.value = compositeValue;
@@ -314,6 +322,14 @@ const ComposeObjectReaction = Reaction.extend({
         // - les propriétés présentent sur l'objet restent définies avant les autres
         // - les propriétés du premier composant sont définies avant celles du second
 
+        // et que fait-on lorsque la collision peut se produire sur existing + first + second ?
+        // je suppose que le code est assez souple pour que ça marche mais il faudra tester
+        // puisqu'on va alors se retrouver avec une propriété qui sera ajouté mais ne sera pas la propriété définitive
+        // et ça c'est embétant, nottament dans effect où on a un incrementValue parce qu'on par du principe que l'élément
+        // est ajouter mais s'il est remplacé ben pas besoin d'incrementValue
+        // on pourrais alors avoir un addedEffect et un removedEffect
+        // et length se retrouverait decrement puis increment
+
         // 1 : traite les propriétées existantes en conflit avec firstComponent
         const unhandledFirstProperties = firstComponent.children.slice();
         let firstPropertyIndex = 0;
@@ -321,6 +337,9 @@ const ComposeObjectReaction = Reaction.extend({
             const ownProperty = this.findConflictualProperty(ownProperties, firstProperty);
             if (ownProperty) {
                 unhandledFirstProperties.splice(firstPropertyIndex, 1);
+                if (debug) {
+                    console.log('handle collision of first component child with existing');
+                }
                 this.handlePropertyCollision(compositeObject, ownProperty, firstProperty);
             }
             firstPropertyIndex++;
@@ -332,6 +351,9 @@ const ComposeObjectReaction = Reaction.extend({
             const ownProperty = this.findConflictualProperty(ownProperties, secondProperty);
             if (ownProperty) {
                 unhandledSecondProperties.splice(secondPropertyIndex, 1);
+                if (debug) {
+                    console.log('handle collision of second component child with existing');
+                }
                 this.handlePropertyCollision(compositeObject, ownProperty, secondProperty);
             }
             secondPropertyIndex++;
@@ -342,6 +364,10 @@ const ComposeObjectReaction = Reaction.extend({
             const secondProperty = this.findConflictualProperty(unhandledSecondProperties, unhandledFirstProperty);
             if (secondProperty) {
                 unhandledFirstProperties.splice(unhandledFirstPropertyIndex, 1);
+                unhandledSecondProperties.splice(unhandledSecondProperties.indexOf(secondProperty), 1);
+                if (debug) {
+                    console.log('handle collision of first component child with second component child');
+                }
                 this.handlePropertyCollision(compositeObject, unhandledFirstProperty, secondProperty);
             }
             unhandledFirstPropertyIndex++;
@@ -353,16 +379,26 @@ const ComposeObjectReaction = Reaction.extend({
             const firstProperty = this.findConflictualProperty(unhandledFirstProperties, unhandledSecondProperty);
             if (firstProperty) {
                 unhandledSecondProperties.splice(unhandledSecondPropertyIndex, 1);
+                unhandledFirstProperties.splice(unhandledFirstProperties.indexOf(firstProperty), 1);
+                if (debug) {
+                    console.log('handle collision of second component child with first component child');
+                }
                 this.handlePropertyCollision(compositeObject, firstProperty, unhandledSecondProperty);
             }
             unhandledSecondPropertyIndex++;
         }
         // 5: traite les propriétés de firstComponent sans conflit
         for (let unhandledFirstProperty of unhandledFirstProperties) {
+            if (debug) {
+                console.log('add collision free child from first component');
+            }
             this.handleNewProperty(compositeObject, unhandledFirstProperty);
         }
         // 6: traite les propriétés de secondComponent sans conflit
         for (let unhandledSecondProperty of unhandledSecondProperties) {
+            if (debug) {
+                console.log('add collision free child from second component');
+            }
             this.handleNewProperty(compositeObject, unhandledSecondProperty);
         }
     },

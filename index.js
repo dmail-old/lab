@@ -102,24 +102,24 @@ export const test = {
                 assert(typeof composed.value === 'object');
             });
 
-            // this.add('object composition', function() {
-            //     const dam = {name: 'dam', item: {name: 'sword'}};
-            //     const seb = {name: 'seb', item: {price: 10}, age: 10};
-            //     const expectedComposite = {name: 'seb', item: {name: 'sword', price: 10}, age: 10};
+            this.add('object composition', function() {
+                const dam = {name: 'dam', item: {name: 'sword'}};
+                const seb = {name: 'seb', item: {price: 10}, age: 10};
+                const expectedComposite = {name: 'seb', item: {name: 'sword', price: 10}, age: 10};
 
-            //     const damElement = scan(dam);
-            //     const sebElement = scan(seb);
-            //     const damValue = damElement.value;
-            //     const sebValue = sebElement.value;
-            //     assert(damValue === dam);
-            //     assert(sebValue === seb);
-            //     assert(damElement.getProperty('name').descriptor.writable === true);
+                const damElement = scan(dam);
+                const sebElement = scan(seb);
+                const damValue = damElement.value;
+                const sebValue = sebElement.value;
+                assert(damValue === dam);
+                assert(sebValue === seb);
+                assert(damElement.getProperty('name').descriptor.writable === true);
 
-            //     const compositeElement = damElement.compose(sebElement);
-            //     const compositeValue = compositeElement.value;
-            //     assert.deepEqual(compositeValue, expectedComposite);
-            //     assert.deepEqual(dam, {name: 'dam', item: {name: 'sword'}});
-            // });
+                const compositeElement = damElement.compose(sebElement);
+                const compositeValue = compositeElement.value;
+                assert.deepEqual(compositeValue, expectedComposite);
+                assert.deepEqual(dam, {name: 'dam', item: {name: 'sword'}});
+            });
 
             // this.add('compose wo arg must create a new object', function() {
             //     const object = {
