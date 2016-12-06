@@ -87,9 +87,9 @@ export const test = {
     modules: ['@node/assert'],
 
     main(assert) {
-        // function assertPrototype(instance, prototype) {
-        //     assert(Object.getPrototypeOf(instance) === prototype);
-        // }
+        function assertPrototype(instance, prototype) {
+            assert(Object.getPrototypeOf(instance) === prototype);
+        }
 
         this.add('core', function() {
             this.add('scan is mutable, compose is immutable', function() {
@@ -121,74 +121,52 @@ export const test = {
                 assert.deepEqual(dam, {name: 'dam', item: {name: 'sword'}});
             });
 
-            // this.add('compose wo arg must create a new object', function() {
-            //     const object = {
-            //         item: {}
-            //     };
-            //     const element = compose(object);
-            //     assert(element.value !== object);
-            //     assert(element.value.item !== object.item);
+            this.add('compose wo arg must create a new object', function() {
+                const object = {
+                    item: {}
+                };
+                const element = compose(object);
+                assert(element.value !== object);
+                assert(element.value.item !== object.item);
 
-            //     const composite = element.compose();
-            //     assert(composite.value !== element.value);
-            //     assert(composite.value.item !== element.value.item);
-            // });
+                const composite = element.compose();
+                assert(composite.value !== element.value);
+                assert(composite.value.item !== element.value.item);
+            });
 
-            // this.add('infection', function() {
-            //     const object = {
-            //         item: {}
-            //     };
-            //     const composite = scan(object);
-            //     const infection = Infection.create({
-            //         foo: true
-            //     });
-            //     infection.carriageable = true;
-            //     composite.infect(infection);
+            this.add('primitive overrides composite property value', function() {
+                const object = {
+                    name: {}
+                };
+                const composite = compose(object).compose({
+                    name: true
+                });
+                assert(composite.value.name === true);
+            });
 
-            //     const infectedComposite = composite.compose();
-            //     assert(infectedComposite.foo);
-            //     const infectedItemProperty = infectedComposite.getProperty('item');
-            //     assert(infectedItemProperty.foo === undefined); // because property is an healthy carrier of the infection
-            //     const infectedItemComposite = infectedItemProperty.valueNode;
-            //     assert(infectedItemComposite.foo);
-            // });
+            this.add('composite overrides primitive', function() {
+                const object = {
+                    name: true
+                };
+                const composite = compose(object).compose({
+                    name: {}
+                });
+                assert(typeof composite.value.name === 'object');
+            });
 
-            // this.add('construct must create new objects', function() {
-            //     const object = {
-            //         foo: true,
-            //         item: {},
-            //         values: [{}]
-            //     };
-            //     const composite = scan(object);
-            //     const instance = composite.construct();
-            //     assertPrototype(instance, object);
-            //     assertPrototype(instance.item, object.item);
-            //     assertPrototype(instance.values[0], object.values[0]);
-
-            //     // construct must not set non composite property on instance
-            //     // we'll have to update the instantiationInfection to allow this
-            //     // assert(instance.hasOwnProperty('foo') === false);
-            // });
-
-            // this.add('primitive overrides composite property value', function() {
-            //     const object = {
-            //         name: {}
-            //     };
-            //     const composite = compose(object).compose({
-            //         name: true
-            //     });
-            //     assert(composite.value.name === true);
-            // });
-
-            // this.add('composite overrides primitive', function() {
-            //     const object = {
-            //         name: true
-            //     };
-            //     const composite = compose(object).compose({
-            //         name: {}
-            //     });
-            //     assert(typeof composite.value.name === 'object');
-            // });
+            this.add('construct must create new objects', function() {
+                const object = {
+                    foo: true,
+                    item: {},
+                    values: [{}]
+                };
+                const composite = scan(object);
+                const instance = composite.construct();
+                assertPrototype(instance, object);
+                assertPrototype(instance.item, object.item);
+                assertPrototype(instance.values[0], object.values[0]);
+                assert(instance.hasOwnProperty('foo') === false);
+            });
         });
 
         // this.add('array', function() {

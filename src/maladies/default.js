@@ -147,7 +147,8 @@ const CopyTransformation = Transformation.extend({
     fill(element, elementModel) {
         element.value = elementModel.value;
         for (let child of elementModel) {
-            child.transform(element);
+            const transformation = child.transform(element);
+            transformation.produce();
         }
     }
 });
@@ -158,6 +159,8 @@ const transformPrimitive = transform.branch(
     CopyTransformation.asMethod()
 );
 const CloneCompositeTransformation = Transformation.extend({
+    debug: true,
+
     make(element) {
         return element.make();
     },
@@ -167,7 +170,8 @@ const CloneCompositeTransformation = Transformation.extend({
         composite.value = compositeValue;
         composite.readProperties(compositeValue);
         for (let child of compositeModel) {
-            child.transform(composite);
+            const transformation = child.transform(composite);
+            transformation.produce();
         }
     }
 });
@@ -186,7 +190,8 @@ const ClonePropertyTransformation = Transformation.extend({
         property.value = propertyModel.value;
         property.descriptor = Object.assign({}, propertyModel.descriptor);
         for (let child of propertyModel) {
-            child.transform(property);
+            const transformation = child.transform(property);
+            transformation.produce();
         }
     }
 });
@@ -586,7 +591,6 @@ const ComposePropertyReaction = Reaction.extend({
             } else if (firstComponent) {
                 reaction = firstConstituant.transform(compositeProperty);
             }
-
             reaction.produce();
         }
     },
@@ -618,68 +622,75 @@ export {
     reactBothProperty
 };
 
-const construct = polymorph();
-construct.branch(
+const instantiateValue = polymorph();
+instantiateValue.branch(
+    function() {
+        return ObjectElement.isPrototypeOf(this);
+    },
+    function() {
+        return Object.create(this.value);
+    }
+);
+
+const instantiate = polymorph();
+instantiate.branch(
     function() {
         return Object.getPrototypeOf(this) === Element;
     },
     function() {
-        throw new Error('pure element cannot be constructed');
+        throw new Error('pure element cannot be instantiated');
     }
 );
-const createObject = construct.branch(
+const InstantiateObjectTransformation = Transformation.extend({
+    make(elementModel) {
+        return elementModel.make();
+    },
+
+    fill(element, elementModel) {
+        element.value = elementModel.instantiateValue();
+        for (let child of elementModel) {
+            const transformation = child.instantiate(element);
+            transformation.produce();
+        }
+    }
+});
+instantiate.branch(
     function() {
         return ObjectElement.isPrototypeOf(this);
     },
-    function(parentNode, index) {
-        return Transformation.extend({
-            fill(element, elementModel) {
-                element.value = Object.create(elementModel.value);
-                // ici ce serait plutot construct children non????
-                element.importChildren(elementModel);
-            }
-        }).create(this, parentNode, index);
-    }
+    InstantiateObjectTransformation.asMethod()
 );
-const defineObjectProperty = construct.branch(
+// delegate property which are primitives
+const CancelTransformation = Transformation.extend({
+    produce() {}
+});
+instantiate.branch(
     function() {
         return (
             ObjectPropertyElement.isPrototypeOf(this) &&
             this.descriptor.hasOwnProperty('value') &&
-            ObjectElement.isPrototypeOf(this.valueNode)
+            this.valueNode.primitiveMark
         );
-    },
-    function(parentNode, index) {
-        return Transformation.extend({
-            fill() {
-
-            }
-        }).create(this, parentNode, index);
-    }
-);
-const CancelTransformation = Transformation.extend({
-    produce() {}
-});
-const delegateOtherProperty = construct.branch(
-    function() {
-        return ObjectPropertyElement.isPrototypeOf(this);
     },
     CancelTransformation.asMethod()
 );
-const createPrimitive = construct.branch(
-    function() {
-        return this.primitiveMark;
-    },
-    function() {
-        return this.value;
+// other property must be instantiated
+const InstantiatePropertyTransformation = ClonePropertyTransformation.extend({
+    fill(property, propertyModel) {
+        property.value = propertyModel.value;
+        property.descriptor = Object.assign({}, propertyModel.descriptor);
+        for (let child of propertyModel) {
+            const transformation = child.instantiate(property);
+            transformation.produce();
+        }
     }
+});
+instantiate.branch(
+    function() {
+        return ObjectPropertyElement.isPrototypeOf(this);
+    },
+    InstantiatePropertyTransformation.asMethod()
 );
-export {
-    createObject,
-    defineObjectProperty,
-    delegateOtherProperty,
-    createPrimitive
-};
 
 const defaultMalady = {
     match: match,
@@ -688,7 +699,11 @@ const defaultMalady = {
     transform: transform,
     react: react,
     effect: effect,
-    construct: construct
+    instantiateValue: instantiateValue,
+    instantiate: instantiate,
+    construct() {
+        return this.instantiate().produce().value;
+    }
 };
 
 export default defaultMalady;
