@@ -124,14 +124,20 @@ const ObjectPropertyElement = Element.extend('ObjectProperty', {
     setValue(value) {
         this.valueNode.value = value;
         this.descriptor.value = value;
+        // il faut un moyen d'informer que la valeur a changé
+        // ptept aussi une méthode setGetter, setSetter
+        // euh là y'a un "souci" c'est que setValue suggère que la valeur est toujours du même type
+        // si le type change il faudrais recréer le bon valueNode
+        // si on veut reste full immutable faudrais de toutes façon recrée la valueNode et donc utiliser
+        // replaceChild ou un truc du genre
     },
 
     incrementValue() {
         this.setValue(this.valueNode.value + 1);
-        // in case the descriptor is not configurable we may have an error here
-        // but spec it works for length property because even if not configurable it's writable
-        // a defineProperty will only update the value
-        this.effect();
+    },
+
+    decrementValue() {
+        this.setValue(this.valueNode.value - 1);
     },
 
     isIndex: (function() {

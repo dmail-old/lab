@@ -91,7 +91,7 @@ const Branch = Instruction.extend(ConditionnableInstructionProperties, {
 const Behaviour = util.extend({
     constructor() {
         /*
-        je pense qu'il faudras supprimer le fait qu'on utiilser un tableau
+        je pense qu'il faudras supprimer le fait qu'on utilise un tableau
         parce qu'on va avoir besoin qu'une méthode puisse hériter du comportement d'une autre
         parce que sinon lorsque j'ai ma méthode par défaut
         qui compose mais n'a pas de variante pour MapEntry
@@ -141,14 +141,14 @@ const Behaviour = util.extend({
     prefer(...instructions) {
         this.instructions = this.instructions.sort(function(a, b) {
             const aIndex = instructions.indexOf(a);
-            if (aIndex === -1) {
-                return 1;
-            }
             const bIndex = instructions.indexOf(b);
-            if (bIndex === -1) {
+            if (aIndex > bIndex) {
                 return -1;
             }
-            return bIndex - aIndex;
+            if (bIndex > aIndex) {
+                return 1;
+            }
+            return 0;
         });
         return this;
     },

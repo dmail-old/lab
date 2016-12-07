@@ -45,16 +45,16 @@ const Transformation = util.extend({
         }
     },
     fill() {},
-    pack(product, ...args) {
-        product.effect(...args);
-    },
+    pack() {},
 
     produce() {
         const args = this.args;
         const product = this.make(...args);
-        this.move(product, ...args);
-        this.fill(product, ...args);
-        this.pack(product, ...args);
+        if (product) {
+            this.move(product, ...args);
+            this.fill(product, ...args);
+            this.pack(product, ...args);
+        }
         return product;
     }
 });

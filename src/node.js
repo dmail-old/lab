@@ -53,7 +53,10 @@ const Node = util.extend({
     },
 
     hook(name, ...args) {
-        this.hooks[name].call(this, ...args);
+        const hooks = this.hooks;
+        if (name in hooks) {
+            hooks[name].call(this, ...args);
+        }
     },
 
     remove() {
