@@ -1,5 +1,15 @@
 /*
 raf
+
+- incrementValue/decrementValue qui devrait recréer un élément
+-> attention cela va retrigger ensureCountTrackerSync alors qu'il ne "faudrais" pas, on veut juste incrémenter
+on sait déjà combien y'en a
+-  readProperties à renommer/impléménter
+avec les modifes lorsque quon touchValue & combineValue il faut que le descriptor hérite de configurable etc
+mais pas de value/get/set sinon readProperties de property va créer des éléments
+- touchChildren & instantiateChildren devrait utiliser readProperties et se comporter comme combineChildren
+sans la partie où on combine les second forcément
+
 */
 
 import util from '../util.js';
@@ -218,22 +228,6 @@ variation.when(
     }
 );
 
-const touchType = polymorph();
-// property
-touchType.branch(
-    ObjectPropertyElement.asMatcher(),
-    function() {
-        const touchedProperty = this.make();
-        const descriptor = this.descriptor;
-        const touchedDescriptor = Object.assign({}, descriptor);
-        touchedProperty.descriptor = touchedDescriptor;
-        return touchedProperty;
-    }
-);
-// other
-touchType.branch(null, function() {
-    return this.make();
-});
 const touchValue = polymorph();
 // Object
 touchValue.branch(
@@ -265,11 +259,42 @@ touchValue.branch(
 );
 // primitives
 touchValue.branch(
-    null,
+    function() {
+        return this.primitiveMark;
+    },
     function() {
         return this.value;
     }
 );
+// property
+touchValue.branch(
+    ObjectPropertyElement.asMatcher(),
+    function() {
+        return this.value;
+    }
+);
+
+const touchType = polymorph();
+// property
+touchType.branch(
+    ObjectPropertyElement.asMatcher(),
+    function(parentNode) {
+        const touchedProperty = this.make(this.touchValue(parentNode));
+        const descriptor = this.descriptor;
+        const touchedDescriptor = {};
+        Object.assign(touchedDescriptor, descriptor);
+        touchedProperty.descriptor = touchedDescriptor;
+        return touchedProperty;
+    }
+);
+// other
+touchType.branch(
+    null,
+    function(parentNode) {
+        return this.make(this.touchValue(parentNode));
+    }
+);
+
 const touchChildren = polymorph();
 touchChildren.branch(
     ObjectElement.asMatcher(),
@@ -289,51 +314,80 @@ touchChildren.branch(
 const TouchTransformation = Transformation.extend({
     debug: !true,
 
-    make(elementModel) {
-        return elementModel.touchType();
+    make(elementModel, parentNode) {
+        return elementModel.touchType(parentNode);
     },
 
     fill(element, elementModel) {
-        const touchedValue = elementModel.touchValue();
-        element.value = touchedValue;
         element.touchChildren(elementModel);
     }
 });
 const touch = TouchTransformation.asMethod();
 
-const combineType = polymorph();
-// Element let the type of the composed prevails
-combineType.branch(
+const combineValue = polymorph();
+const somePrimitive = function(otherElement) {
+    return this.primitiveMark || otherElement.primitiveMark;
+};
+const bothProperty = function(otherElement) {
+    return (
+        ObjectPropertyElement.isPrototypeOf(this) &&
+        ObjectPropertyElement.isPrototypeOf(otherElement)
+    );
+};
+// pure element used otherElement touched value
+combineValue.branch(
     Element.asMatcherStrict(),
-    function(element) {
-        return element.make();
+    function(otherElement, parentNode) {
+        return otherElement.touchValue(parentNode);
     }
 );
-// primitive let the type of the composed prevails
-combineType.branch(
-    function(element) {
-        return this.primitiveMark || element.primitiveMark;
-    },
-    function(element) {
-        return element.make();
+// primitive use otherElement touched value
+combineValue.branch(
+    somePrimitive,
+    function(otherElement, parentNode) {
+        return otherElement.touchValue(parentNode);
     }
 );
-// property type composition, we have to pass descriptor and a custom compose children
-combineType.branch(
-    function(otherElement) {
-        return (
-            ObjectPropertyElement.isPrototypeOf(this) &&
-            ObjectPropertyElement.isPrototypeOf(otherElement)
-        );
-    },
-    function(otherProperty) {
-        const composedProperty = otherProperty.make();
-        const secondDescriptor = otherProperty.descriptor;
-        const composedDescriptor = Object.assign({}, secondDescriptor);
-        composedProperty.descriptor = composedDescriptor;
-        return composedProperty;
+// property use self touched value
+combineValue.branch(
+    bothProperty,
+    function(otherProperty, parentNode) {
+        return this.touchValue(parentNode);
     }
 );
+// for now Object, Array, Function, ... combineValue ignores otherElement value
+// and return this touched value, however we can later modify this behaviour
+// to say that combinedString must be concatened or combine function must execute one after an other
+// Object
+combineValue.branch(
+    ObjectElement.asMatcherStrict(),
+    function(parentNode) {
+        return this.touchValue(parentNode);
+    }
+);
+// Array
+combineValue.branch(
+    ArrayElement.asMatcher(),
+    function(parentNode) {
+        return this.touchValue(parentNode);
+    }
+);
+// Function
+combineValue.branch(
+    FunctionElement.asMatcher(),
+    function(parentNode) {
+        return this.touchValue(parentNode);
+    }
+);
+// Boolean, Number, String, RegExp, Date, Error
+combineValue.branch(
+    ObjectElement.asMatcher(),
+    function(parentNode) {
+        return this.touchValue(parentNode);
+    }
+);
+
+const combineType = polymorph();
 // this case exists because array length property is not configurable
 // because of that we cannot redefine it when composing array with arraylike
 // so when there is a already a length property assume it's in sync
@@ -401,61 +455,42 @@ combineType.branch(
         return null;
     }
 );
-// other
+// otherElement type prevails for Element and primitives
 combineType.branch(
-    null,
     function() {
-        return this.make();
-    }
-);
-const combineValue = polymorph();
-// Object
-combineValue.branch(
-    ObjectElement.asMatcherStrict(),
-    function() {
-        return {};
-    }
-);
-// Array
-combineValue.branch(
-    ArrayElement.asMatcher(),
-    function() {
-        return [];
-    }
-);
-// Function
-combineValue.branch(
-    FunctionElement.asMatcher(),
-    function() {
-        return cloneFunction(this.value);
-    }
-);
-// Primitives
-// Y'a un souci lorsque firstComponent est l'élément pure, voir même dans d'autre cas
-// ou le type qu'on choisit n'est pas firstComponent mais secondComponent
-// dans ce cas là il faudrais utiliser secondComponent.value hors on utilise firstComponent.value
-// dans le code ci-dessous et y'a plusieurs fois ou ça m'a piégé
-combineValue.branch(
-    function() {
-        return this.primitiveMark;
+        return (
+            Element.asMatcherStrict().apply(this, arguments) ||
+            somePrimitive.apply(this, arguments)
+        );
     },
-    function(firstComponent, secondComponent) {
-        return secondComponent.value;
+    function(otherElement, parentNode) {
+        return otherElement.make(this.combineValue(otherElement, parentNode));
     }
 );
-// Boolean, Number, String, Date, RegExp, Error
-combineValue.branch(
+// property type composition, we have to pass descriptor
+combineType.branch(
+    function(otherElement) {
+        return (
+            ObjectPropertyElement.isPrototypeOf(this) &&
+            ObjectPropertyElement.isPrototypeOf(otherElement)
+        );
+    },
+    function(otherProperty, parentNode) {
+        const composedProperty = this.make(this.combineValue(otherProperty, parentNode));
+        const secondDescriptor = otherProperty.descriptor;
+        const composedDescriptor = Object.assign({}, secondDescriptor);
+        composedProperty.descriptor = composedDescriptor;
+        return composedProperty;
+    }
+);
+// objects let first type prevails
+combineType.branch(
     ObjectElement.asMatcher(),
-    function(firstComponent) {
-        return new firstComponent.constructedBy(firstComponent.value.valueOf()); // eslint-disable-line new-cap
+    function(otherElement, parentNode) {
+        return this.make(this.combineValue(otherElement, parentNode));
     }
 );
-combineValue.branch(
-    ObjectPropertyElement.asMatcher(),
-    function(firstProperty, secondProperty) {
-        return secondProperty.value;
-    }
-);
+
 const conflictsWith = polymorph();
 // property children conflict is special
 conflictsWith.branch(
@@ -612,8 +647,8 @@ combineChildren.branch(
 const CombineTransformation = Transformation.extend({
     debug: !true,
 
-    make(firstElement, secondElement) {
-        const combined = firstElement.combineType(secondElement);
+    make(firstElement, secondElement, parentNode) {
+        const combined = firstElement.combineType(secondElement, parentNode);
         if (combined) {
             combined.firstComponent = firstElement;
             combined.secondComponent = secondElement;
@@ -627,8 +662,6 @@ const CombineTransformation = Transformation.extend({
     },
 
     fill(combined, firstComponent, secondComponent) {
-        const combinedValue = combined.combineValue(firstComponent, secondComponent);
-        combined.value = combinedValue;
         combined.combineChildren(firstComponent, secondComponent);
     }
 });
@@ -656,15 +689,16 @@ instantiateType.branch(
 );
 instantiateType.branch(
     ObjectPropertyElement.asMatcher(),
-    function() {
-        const property = this.make();
+    function(parentNode) {
+        const property = this.make(this.instantiateValue(parentNode));
         property.descriptor = Object.assign({}, this.descriptor);
         return property;
     }
 );
-instantiateType.branch(null, function() {
-    return this.make();
+instantiateType.branch(null, function(parentNode) {
+    return this.make(this.instantiateValue(parentNode));
 });
+// il manque quand même le pouvoir ici-même de dire ok pour l'instantiation j'aimerais ce comportement spécifique
 const instantiateValue = polymorph();
 instantiateValue.branch(
     ObjectElement.asMatcher(),
@@ -683,26 +717,29 @@ instantiateChildren.branch(
     }
 );
 const InstantiateTransformation = Transformation.extend({
-    make(elementModel) {
-        return elementModel.instantiateType();
+    make(elementModel, parentNode) {
+        return elementModel.instantiateType(parentNode);
     },
 
     fill(element, elementModel) {
-        const instantiatedValue = elementModel.instantiateValue();
-        element.value = instantiatedValue;
         element.instantiateChildren(elementModel);
     }
 });
 const instantiate = InstantiateTransformation.asMethod();
 
 // length count tracker must be in sync with current amount of indexed properties
+// doit se produire pour touch, combine et instantiate, là c'est pas le cas
 [touchValue, combineValue, instantiateValue].forEach(function(method) {
     const ensureCountTrackerSync = method.branch(
         function() {
             return isCountTracker(this);
         },
         function() {
-            return this.parentNode.children.reduce(function(previous, current) {
+            // for touchValue & instantiateValue parentNode is the first argument
+            // but for combineValue its the second
+            const parentNode = arguments[arguments.length === 1 ? 0 : 1];
+
+            return parentNode.children.reduce(function(previous, current) {
                 if (ObjectPropertyElement.isPrototypeOf(current) && current.isIndex()) {
                     previous++;
                 }
@@ -755,17 +792,17 @@ const ignoreConcatenedPropertyConflict = conflictsWith.branch(
     }
 );
 conflictsWith.prefer(ignoreConcatenedPropertyConflict);
-touchValue.branch(
-    function() {
+const concatIndexedProperty = touchValue.branch(
+    function(parentNode) {
         return (
             ObjectPropertyElement.isPrototypeOf(this) &&
             this.isIndex() &&
-            hasLengthPropertyWhichIsCountTracker(this.parentNode)
+            hasLengthPropertyWhichIsCountTracker(parentNode)
         );
     },
-    function(indexedPropertyModel) {
-        let index = indexedPropertyModel.value;
-        const length = this.parentNode.getProperty('length').propertyValue;
+    function(parentNode) {
+        let index = this.value;
+        const length = parentNode.getProperty('length').propertyValue;
 
         if (length > 0) {
             const currentIndex = Number(index);
@@ -779,6 +816,7 @@ touchValue.branch(
         return index;
     }
 );
+touchValue.prefer(concatIndexedProperty);
 
 const defaultMalady = {
     match,
