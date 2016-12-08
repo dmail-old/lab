@@ -48,14 +48,14 @@ const ObjectElement = Element.extend('Object', createConstructedByProperties(Obj
     },
 
     hasProperty(name) {
-        return this.children.some(function(property) {
-            return property.name === name;
+        return this.children.some(function(child) {
+            return ObjectPropertyElement.isPrototypeOf(child) && child.name === name;
         });
     },
 
     getProperty(name) {
-        return this.children.find(function(property) {
-            return property.name === name;
+        return this.children.find(function(child) {
+            return ObjectPropertyElement.isPrototypeOf(child) && child.name === name;
         });
     }
 });
