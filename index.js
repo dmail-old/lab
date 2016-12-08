@@ -41,7 +41,7 @@ Element.refine({
     compose() {
         let composite;
         if (arguments.length === 0) {
-            let transformation = this.transform();
+            let transformation = this.touch();
             let product = transformation.produce();
             composite = product;
         } else {
@@ -56,8 +56,8 @@ Element.refine({
                 } else {
                     element = scan(arg);
                 }
-                let reaction = composite.combine(element);
-                let product = reaction.produce();
+                let transformation = composite.combine(element);
+                let product = transformation.produce();
                 composite = product;
             }
         }
