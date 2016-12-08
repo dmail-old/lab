@@ -4,11 +4,6 @@ raf
 - incrementValue/decrementValue qui devrait recréer un élément
 -> attention cela va retrigger ensureCountTrackerSync alors qu'il ne "faudrais" pas, on veut juste incrémenter
 on sait déjà combien y'en a
--  readProperties à renommer/impléménter
-avec les modifes lorsque quon touchValue & combineValue il faut que le descriptor hérite de configurable etc
-mais pas de value/get/set sinon readProperties de property va créer des éléments
-- touchChildren & instantiateChildren devrait utiliser readProperties et se comporter comme combineChildren
-sans la partie où on combine les second forcément
 
 */
 
@@ -51,38 +46,6 @@ function cloneFunction(fn) {
     };
 }
 
-const match = polymorph();
-const matchNull = match.branch(
-    function() {
-        return this.tagName === 'null';
-    },
-    function(value) {
-        return value === null;
-    }
-);
-['boolean', 'number', 'string', 'symbol', 'undefined'].forEach(function(primitiveName) {
-    match.branch(
-        function() {
-            return this.tagName === primitiveName;
-        },
-        function(value) {
-            return typeof value === primitiveName;
-        }
-    );
-});
-const matchConstructedBy = match.branch(
-    function() {
-        return this.hasOwnProperty('constructedBy');
-    },
-    function(value) {
-        return this.constructedBy.prototype.isPrototypeOf(value);
-    }
-);
-export {
-    matchNull,
-    matchConstructedBy
-};
-
 Element.refine({
     make() {
         return this.createConstructor.apply(this, arguments);
@@ -104,6 +67,8 @@ Element.refine({
 });
 
 const Transformation = util.extend({
+    debug: false,
+
     constructor() {
         this.args = arguments;
     },
@@ -124,10 +89,104 @@ const Transformation = util.extend({
             }
         }
     },
-    fill() {},
+    fill(product) {
+        const firstElement = arguments[1];
+        const secondElement = arguments.length === 3 ? null : arguments[2];
+
+        // afin d'obtenir un objet final ayant ses propriétés dans l'ordre le plus logique possible
+        // on a besoin de plusieurs étapes pour s'assurer que
+        // - les propriétés présentent sur l'objet restent définies avant les autres
+        // - les propriétés du premier composant sont définies avant celles du second
+        const existingChildren = product.readChildren();
+        const firstElementChildren = firstElement.children.slice();
+        const secondElementChildren = secondElement ? secondElement.children.slice() : [];
+
+        // 1 : traite les enfants de firstComponent en conflit avec des enfants existants
+        this.handleEveryCollision(product, firstElementChildren, existingChildren);
+        // 2: traite les enfants de secondComponent en conflit avec des enfants existants
+        this.handleEveryCollision(product, secondElementChildren, existingChildren);
+        // 3: traite les enfants de firstComponent en conflit avec les enfants de secondComponent
+        this.handleEveryCollision(product, firstElementChildren, secondElementChildren, true);
+        // 4: traite les enfants de secondComponent en conflit avec les enfants de firstComponent
+        // normalement cette étape ne sers pas puisque les conflit sont déjà détecté à l'étape 3
+        // handleEveryCollision.call(this, secondComponentChildren, firstComponentChildren, true);
+        // 5: traite les propriétés de firstComponent sans conflit
+        this.handleEveryRemaining(product, firstElementChildren);
+        // 6: traite les propriétés de secondComponent sans conflit
+        this.handleEveryRemaining(product, secondElementChildren);
+    },
     pack(product) {
         product.variation('added');
     },
+
+    handleEveryCollision(product, children, otherChildren, markOtherAsHandled) {
+        let childIndex = 0;
+        let childrenLength = children.length;
+        while (childIndex < childrenLength) {
+            const child = children[childIndex];
+            const otherChild = this.findConflictualChild(otherChildren, child);
+            if (otherChild) {
+                if (markOtherAsHandled) {
+                    this.handleCollision(product, child, otherChild);
+                    otherChildren.splice(otherChildren.indexOf(otherChild), 1);
+                } else {
+                    this.handleCollision(product, otherChild, child);
+                }
+
+                children.splice(childIndex, 1);
+                childrenLength--;
+            } else {
+                childIndex++;
+            }
+        }
+        return childrenLength;
+    },
+
+    findConflictualChild(children, possiblyConflictualChild) {
+        return children.find(function(child) {
+            return child.conflictsWith(possiblyConflictualChild);
+        }, this);
+    },
+
+    handleCollision(product, child, conflictualChild) {
+        if (this.debug) {
+            if (ObjectPropertyElement.isPrototypeOf(child)) {
+                console.log(
+                    child.name, 'property collision'
+                );
+            } else {
+                console.log(
+                    'value collision between',
+                    child.value, 'and', conflictualChild.value,
+                    'for property', child.parentNode.name
+                );
+            }
+        }
+        this.transformConflictingChild(product, child, conflictualChild);
+    },
+    transformConflictingChild() {}, // to be implemeted
+
+    handleEveryRemaining(product, children) {
+        for (let child of children) {
+            this.handleRemaining(product, child);
+        }
+    },
+
+    handleRemaining(product, child) {
+        if (this.debug) {
+            if (ObjectPropertyElement.isPrototypeOf(child)) {
+                console.log(
+                    child.name, 'property has no collision'
+                );
+            } else {
+                console.log(
+                    child.value, 'has no collision for property', child.parentNode.name
+                );
+            }
+        }
+        this.transformChild(product, child);
+    },
+    transformChild() {}, // to be implemented
 
     produce() {
         const args = this.args;
@@ -168,14 +227,17 @@ variation.when(
     function(type) {
         const child = this;
         const property = this.parentNode;
+        const descriptorModel = property.valueModel.descriptor;
         let descriptorProperty;
 
-        if (child === property.valueNode) {
+        if (descriptorModel.hasOwnProperty('value')) {
             descriptorProperty = 'value';
-        } else if (child === property.getterNode) {
+        } else if (descriptorModel.hasOwnProperty('get') && property.children.length === 0) {
             descriptorProperty = 'get';
-        } else if (child === property.setterNode) {
+        } else if (descriptorModel.hasOwnProperty('set')) {
             descriptorProperty = 'set';
+        } else {
+            console.error(child, 'is noting inside', property);
         }
 
         if (type === 'added') {
@@ -295,22 +357,6 @@ touchType.branch(
     }
 );
 
-const touchChildren = polymorph();
-touchChildren.branch(
-    ObjectElement.asMatcher(),
-    function(elementModel) {
-        this.readProperties(this.value);
-        // ici il faudrais ptet un truc genre elementModel.exportTouchedChildren(this);
-        // faudrais ptet renommer readProperties
-        // dailler je vois un souci là, je ne gère pas les conflit entre les éventuelles properties éxistantes
-        // de this.value & celle dans elementModel
-        // autrement dit le code dans combineChildren est commun à celui-ci de ce point de vue
-        // sur elementModel
-        for (let child of elementModel) {
-            child.touch(this).produce();
-        }
-    }
-);
 const TouchTransformation = Transformation.extend({
     debug: !true,
 
@@ -318,8 +364,12 @@ const TouchTransformation = Transformation.extend({
         return elementModel.touchType(parentNode);
     },
 
-    fill(element, elementModel) {
-        element.touchChildren(elementModel);
+    transformConflictingChild(product, child, conflictualChild) {
+        return child.combine(conflictualChild, product);
+    },
+
+    transformChild(product, child) {
+        return child.touch(product);
     }
 });
 const touch = TouchTransformation.asMethod();
@@ -530,120 +580,6 @@ conflictsWith.branch(
 conflictsWith.branch(null, function() {
     return false;
 });
-const combineChildren = polymorph();
-// object children composition
-ObjectPropertyElement.refine({
-    readProperties() {
-        // devras être renommer readChildren et devra effectivement
-        // lire les éventuelles child déjà présent dans this.descriptor
-        return [];
-    }
-});
-combineChildren.branch(
-    function() {
-        return (
-            ObjectElement.isPrototypeOf(this) ||
-            ObjectPropertyElement.isPrototypeOf(this)
-        );
-    },
-    function(firstComponent, secondComponent) {
-        // afin d'obtenir un objet final ayant ses propriétés dans l'ordre le plus logique possible
-        // on a besoin de plusieurs étapes pour s'assurer que
-        // - les propriétés présentent sur l'objet restent définies avant les autres
-        // - les propriétés du premier composant sont définies avant celles du second
-
-        const debug = false;
-        function handleEveryCollision(children, otherChildren, markOtherAsHandled) {
-            let childIndex = 0;
-            let childrenLength = children.length;
-            while (childIndex < childrenLength) {
-                const child = children[childIndex];
-                const otherChild = findConflictualChild(otherChildren, child);
-                if (otherChild) {
-                    if (markOtherAsHandled) {
-                        handleCollision.call(this, child, otherChild);
-                        otherChildren.splice(otherChildren.indexOf(otherChild), 1);
-                    } else {
-                        handleCollision.call(this, otherChild, child);
-                    }
-
-                    children.splice(childIndex, 1);
-                    childrenLength--;
-                } else {
-                    childIndex++;
-                }
-            }
-            return childrenLength;
-        }
-
-        function findConflictualChild(children, possiblyConflictualChild) {
-            return children.find(function(child) {
-                return child.conflictsWith(possiblyConflictualChild);
-            }, this);
-        }
-
-        function handleCollision(child, conflictualChild) {
-            if (debug) {
-                if (ObjectPropertyElement.isPrototypeOf(child)) {
-                    console.log(
-                        child.name, 'property collision'
-                    );
-                } else {
-                    console.log(
-                        'value collision between',
-                        child.value, 'and', conflictualChild.value,
-                        'for property', child.parentNode.name
-                    );
-                }
-            }
-            child.combine(conflictualChild, this).produce();
-        }
-
-        function handleEveryRemaining(children) {
-            for (let child of children) {
-                handleRemaining.call(this, child);
-            }
-        }
-
-        function handleRemaining(child) {
-            if (debug) {
-                if (ObjectPropertyElement.isPrototypeOf(child)) {
-                    console.log(
-                        child.name, 'property has no collision'
-                    );
-                } else {
-                    console.log(
-                        child.value, 'has no collision for property', child.parentNode.name
-                    );
-                }
-            }
-            child.touch(this).produce();
-        }
-
-        const existingChildren = this.readProperties(this.value);
-        const firstComponentChildren = firstComponent.children.slice();
-        const secondComponentChildren = secondComponent.children.slice();
-
-        // 1 : traite les enfants de firstComponent en conflit avec des enfants existants
-        handleEveryCollision.call(this, firstComponentChildren, existingChildren);
-        // 2: traite les enfants de secondComponent en conflit avec des enfants existants
-
-        handleEveryCollision.call(this, secondComponentChildren, existingChildren);
-
-        // 3: traite les enfants de firstComponent en conflit avec les enfants de secondComponent
-        handleEveryCollision.call(this, firstComponentChildren, secondComponentChildren, true);
-
-        // 4: traite les enfants de secondComponent en conflit avec les enfants de firstComponent
-        // normalement cette étape ne sers pas puisque les conflit sont déjà détecté à l'étape 3
-        // handleEveryCollision.call(this, secondComponentChildren, firstComponentChildren, true);
-
-        // 5: traite les propriétés de firstComponent sans conflit
-        handleEveryRemaining.call(this, firstComponentChildren);
-
-        // 6: traite les propriétés de secondComponent sans conflit
-        handleEveryRemaining.call(this, secondComponentChildren);
-    }
-);
 const CombineTransformation = Transformation.extend({
     debug: !true,
 
@@ -656,13 +592,16 @@ const CombineTransformation = Transformation.extend({
         return combined;
     },
 
-    move(combinedElement, firstElement, secondElement, parentElement) {
-        // ignore the reactingElement during insertion
-        Transformation.move.call(this, combinedElement, firstElement, parentElement);
+    move(product, firstElement, secondElement, parentElement) {
+        Transformation.move.call(this, product, firstElement, parentElement);
     },
 
-    fill(combined, firstComponent, secondComponent) {
-        combined.combineChildren(firstComponent, secondComponent);
+    transformConflictingChild(product, child, conflictualChild) {
+        return child.combine(conflictualChild, product);
+    },
+
+    transformChild(product, child) {
+        return child.touch(product);
     }
 });
 const combine = CombineTransformation.asMethod();
@@ -706,23 +645,17 @@ instantiateValue.branch(
         return Object.create(this.value);
     }
 );
-const instantiateChildren = polymorph();
-instantiateChildren.branch(
-    ObjectElement.asMatcher(),
-    function(elementModel) {
-        this.readProperties(this.value);
-        for (let child of elementModel) {
-            child.instantiate(this).produce();
-        }
-    }
-);
 const InstantiateTransformation = Transformation.extend({
     make(elementModel, parentNode) {
         return elementModel.instantiateType(parentNode);
     },
 
-    fill(element, elementModel) {
-        element.instantiateChildren(elementModel);
+    transformConflictingChild(product, child, conflictualChild) {
+        return child.combine(conflictualChild, product);
+    },
+
+    transformChild(product, child) {
+        return child.instantiate(product);
     }
 });
 const instantiate = InstantiateTransformation.asMethod();
@@ -819,19 +752,15 @@ const concatIndexedProperty = touchValue.branch(
 touchValue.prefer(concatIndexedProperty);
 
 const defaultMalady = {
-    match,
     touchType,
     touchValue,
-    touchChildren,
     touch,
     combineType,
     combineValue,
-    combineChildren,
     conflictsWith,
     combine,
     instantiateType,
     instantiateValue,
-    instantiateChildren,
     instantiate,
     construct() {
         return this.instantiate().produce().value;

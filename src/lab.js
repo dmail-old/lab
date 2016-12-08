@@ -5,12 +5,6 @@ import util from './util.js';
 import Node from './node.js';
 
 const Lab = util.extend({
-    scan(value) {
-        const element = this.match(value);
-        element.fill(value);
-        return element;
-    },
-
     match(value) {
         const ElementMatchingValue = this.findElementByValueMatch(value);
         const element = ElementMatchingValue.create(value);
@@ -87,8 +81,6 @@ const Lab = util.extend({
         }
     }
 });
-
-const scan = Lab.scan.bind(Lab);
 
 const Element = Node.extend({
     extend(tagName, ...args) {
@@ -567,7 +559,6 @@ match()
 
 export {
     Element,
-    Lab,
-    scan
+    Lab
 };
 export default Lab;

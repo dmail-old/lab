@@ -1,6 +1,6 @@
 /* eslint-disable no-use-before-define */
 
-import {Lab, Element} from './lab.js';
+import {Element} from './lab.js';
 import {PrimitiveProperties} from './primitive.js';
 
 function createConstructedByProperties(Constructor) {
@@ -9,90 +9,27 @@ function createConstructedByProperties(Constructor) {
     };
 }
 
-const ObjectElement = Element.extend('Object', createConstructedByProperties(Object), {
-    fill(value) {
-        this.readProperties(value);
-        // freeze after so that property descriptor remains intact
-        // Object.freeze(value);
-    },
-
-    readProperties(value) {
-        return this.listProperties(value).map(function(name) {
-            return this.readProperty(value, name);
-        }, this);
-    },
-
-    listProperties(value) {
-        return Object.getOwnPropertyNames(value);
-    },
-
-    readProperty(value, name) {
-        const propertyNode = this.createProperty(name);
-        this.addProperty(propertyNode);
-
-        const descriptor = Object.getOwnPropertyDescriptor(value, name);
-        if (descriptor === null || descriptor === undefined) {
-            throw new Error('value has no property named ' + name + ' (value : ' + value + ' )');
-        }
-        propertyNode.fill(descriptor);
-
-        return propertyNode;
-    },
-
-    createProperty(name) {
-        return ObjectPropertyElement.create(name);
-    },
-
-    addProperty(property) {
-        return this.appendChild(property);
-    },
-
-    hasProperty(name) {
-        return this.children.some(function(child) {
-            return ObjectPropertyElement.isPrototypeOf(child) && child.name === name;
-        });
-    },
-
-    getProperty(name) {
-        return this.children.find(function(child) {
-            return ObjectPropertyElement.isPrototypeOf(child) && child.name === name;
-        });
-    }
-});
 // maybe rename compositePropertyElement
+// must be registered before ObjectElement because it must match before
 const ObjectPropertyElement = Element.extend('ObjectProperty', {
-    fill(descriptor) {
-        this.descriptor = descriptor;
-
-        if (descriptor.hasOwnProperty('value')) {
-            const propertyValue = descriptor.value;
-            // on retoruve le concept de transformation
-            // ou on doit dabord créer le produit, puis l'insérer et enfin le remplir
-            const valueNode = Lab.match(propertyValue);
-            this.appendChild(valueNode);
-            valueNode.fill(propertyValue);
-        } else {
-            if (descriptor.hasOwnProperty('get')) {
-                const propertyGetter = descriptor.get;
-                const getterNode = Lab.match(propertyGetter);
-                this.appendChild(getterNode);
-                getterNode.fill(propertyGetter);
-            }
-            if (descriptor.hasOwnProperty('set')) {
-                const propertySetter = descriptor.set;
-                const setterNode = Lab.match(propertySetter);
-                this.appendChild(setterNode);
-                setterNode.fill(propertySetter);
-            }
-        }
-    },
-
-    get name() {
+    get definition() {
         return this.value;
     },
 
+    get name() {
+        return this.definition.name;
+    },
+
     set name(name) {
-        this.value = name;
+        this.definition.name = name;
+    },
+
+    get descriptor() {
+        return this.definition.descriptor;
+    },
+
+    set descriptor(descriptor) {
+        this.definition.descriptor = descriptor;
     },
 
     get valueNode() {
@@ -178,6 +115,21 @@ const ObjectPropertyElement = Element.extend('ObjectProperty', {
         };
     })()
 });
+
+const ObjectElement = Element.extend('Object', createConstructedByProperties(Object), {
+    hasProperty(name) {
+        return this.children.some(function(child) {
+            return ObjectPropertyElement.isPrototypeOf(child) && child.name === name;
+        });
+    },
+
+    getProperty(name) {
+        return this.children.find(function(child) {
+            return ObjectPropertyElement.isPrototypeOf(child) && child.name === name;
+        });
+    }
+});
+
 const ArrayElement = ObjectElement.extend('Array', createConstructedByProperties(Array));
 const BooleanElement = ObjectElement.extend('Boolean', createConstructedByProperties(Boolean));
 const NumberElement = ObjectElement.extend('Number', createConstructedByProperties(Number));
@@ -187,17 +139,7 @@ const DateElement = ObjectElement.extend('Date', createConstructedByProperties(D
 // handle function as primitive because perf
 const FunctionElement = ObjectElement.extend('Function',
     createConstructedByProperties(Function),
-    PrimitiveProperties,
-    {
-        listProperties(value) {
-            return Object.getOwnPropertyNames(value).filter(function(name) {
-                // do as if prototype property does not exists for now
-                // because every function.prototype is a circular structure
-                // due to prototype.constructor
-                return name !== 'prototype';
-            });
-        }
-    }
+    PrimitiveProperties
 );
 // handle error as primitive because hard to preserve stack property
 const ErrorElement = ObjectElement.extend('Error',

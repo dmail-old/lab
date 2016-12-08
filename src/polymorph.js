@@ -169,6 +169,10 @@ const Behaviour = util.extend({
         });
     },
 
+    list() {
+        return this.instructions;
+    },
+
     createExecutionFlowController() {
         const behaviour = this;
         const executionFlowController = function() {

@@ -23,9 +23,29 @@ composition.construct.branch(); // et hop on ajoute un cas custom
 - une fois qu'on a tout ça on pousuis l'implémentation des examples
 */
 
-import {scan, Element} from './src/lab.js';
-import './src/primitive.js';
-// import {ObjectElement} from './src/composite.js';
+import {Lab, Element} from './src/lab.js';
+import util from './src/util.js';
+import {
+    NullPrimitiveElement,
+    UndefinedPrimitiveElement,
+    BooleanPrimitiveElement,
+    NumberPrimitiveElement,
+    StringPrimitiveElement,
+    SymbolPrimitiveElement
+} from './src/primitive.js';
+import {
+    ObjectElement,
+    ObjectPropertyElement,
+    BooleanElement,
+    NumberElement,
+    StringElement,
+    ArrayElement,
+    FunctionElement,
+    ErrorElement,
+    RegExpElement,
+    DateElement
+} from './src/composite.js';
+import {polymorph} from './src/polymorph.js';
 
 import defaultMalady from './src/maladies/default.js';
 
@@ -37,6 +57,153 @@ Element.refine({
         return this;
     }
 });
+
+const PropertyDefinition = util.extend({
+    constructor(name, descriptor) {
+        this.name = name;
+        this.descriptor = descriptor;
+    }
+});
+
+// match
+(function() {
+    // null primitive is special
+    NullPrimitiveElement.refine({
+        match(value) {
+            return value === null;
+        }
+    });
+    // property is special
+    ObjectPropertyElement.refine({
+        match(value) {
+            return PropertyDefinition.isPrototypeOf(value);
+        }
+    });
+
+    function valueTypeMatchTagName(value) {
+        return typeof value === this.tagName;
+    }
+    [
+        UndefinedPrimitiveElement,
+        BooleanPrimitiveElement,
+        NumberPrimitiveElement,
+        StringPrimitiveElement,
+        SymbolPrimitiveElement
+    ].forEach(function(Element) {
+        Element.refine({
+            match: valueTypeMatchTagName
+        });
+    });
+    function valueMatchConstructorPrototype(value) {
+        return this.constructedBy.prototype.isPrototypeOf(value);
+    }
+    [
+        ObjectElement,
+        BooleanElement,
+        NumberElement,
+        StringElement,
+        ArrayElement,
+        FunctionElement,
+        ErrorElement,
+        RegExpElement,
+        DateElement
+    ].forEach(function(Element) {
+        Element.refine({
+            match: valueMatchConstructorPrototype
+        });
+    });
+})();
+
+const scan = function(value, parentNode) {
+    const element = Lab.findElementByValueMatch(value).create();
+    element.valueModel = value; // we nedd to remind valueModel if we want cyclic structure support
+    element.value = element.scanValue(value);
+    if (parentNode) {
+        parentNode.appendChild(element);
+    }
+    element.scanChildren(value);
+    element.variation('added');
+    return element;
+};
+const scanValue = polymorph();
+scanValue.branch(
+    ObjectElement.asMatcherStrict(),
+    function() {
+        return {};
+    }
+);
+scanValue.branch(
+    ObjectPropertyElement.asMatcher(),
+    function(definition) {
+        const descriptor = definition.descriptor;
+        const scannedDescriptor = {};
+
+        scannedDescriptor.configurable = descriptor.configurable;
+        scannedDescriptor.writable = descriptor.writable;
+        scannedDescriptor.enumerable = descriptor.enumerable;
+
+        return PropertyDefinition.create(
+            definition.name,
+            scannedDescriptor
+        );
+    }
+);
+scanValue.branch(
+    function() {
+        return this.primitiveMark;
+    },
+    function(value) {
+        return value;
+    }
+);
+const scanChildren = polymorph();
+scanChildren.branch(
+    ObjectElement.asMatcher(),
+    function(value) {
+        Object.getOwnPropertyNames(value).forEach(function(name) {
+            const descriptor = Object.getOwnPropertyDescriptor(value, name);
+            const definition = PropertyDefinition.create(name, descriptor);
+            scan(definition, this);
+        }, this);
+    }
+);
+scanChildren.branch(
+    ObjectPropertyElement.asMatcher(),
+    function(definition) {
+        const descriptor = definition.descriptor;
+
+        if (descriptor.hasOwnProperty('value')) {
+            const propertyValue = descriptor.value;
+            scan(propertyValue, this);
+        } else {
+            if (descriptor.hasOwnProperty('get')) {
+                const propertyGetter = descriptor.get;
+                scan(propertyGetter, this);
+            }
+            if (descriptor.hasOwnProperty('set')) {
+                const propertySetter = descriptor.set;
+                scan(propertySetter, this);
+            }
+        }
+    }
+);
+// disable prototype property disocverability on function to prevent infinite recursion (prototype is a cyclic structure)
+// FunctionElement.refine({
+//     scanChildren(value) {
+//             return Object.getOwnPropertyNames(value).filter(function(name) {
+//                 // do as if prototype property does not exists for now
+//                 // because every function.prototype is a circular structure
+//                 // due to prototype.constructor
+//                 return name !== 'prototype';
+//             });
+//         }
+//     }
+// });
+Element.refine({
+    scanValue: scanValue,
+    scanChildren: scanChildren
+});
+
 Element.refine({
     compose() {
         let composite;
@@ -65,7 +232,6 @@ Element.refine({
         return composite;
     }
 });
-
 const pureElement = Element.create();
 const compose = pureElement.compose.bind(pureElement);
 
@@ -107,33 +273,34 @@ export const test = {
 
         this.add('core', function() {
             this.add('scan is mutable, compose is immutable', function() {
-                const object = {};
+                const object = {foo: true};
                 const scanned = scan(object);
-                const composed = compose(object);
+                // const composed = compose(object);
 
-                assert(scanned.value === object);
-                assert(composed.value !== object);
-                assert(typeof composed.value === 'object');
+                assert.deepEqual(scanned.value, object);
+                assert(scanned.value !== object);
+                // assert(composed.value !== object);
+                // assert(typeof composed.value === 'object');
             });
 
-            this.add('object composition', function() {
-                const dam = {name: 'dam', item: {name: 'sword'}};
-                const seb = {name: 'seb', item: {price: 10}, age: 10};
-                const expectedComposite = {name: 'seb', item: {name: 'sword', price: 10}, age: 10};
+            // this.add('object composition', function() {
+            //     const dam = {name: 'dam', item: {name: 'sword'}};
+            //     const seb = {name: 'seb', item: {price: 10}, age: 10};
+            //     const expectedComposite = {name: 'seb', item: {name: 'sword', price: 10}, age: 10};
 
-                const damElement = scan(dam);
-                const sebElement = scan(seb);
-                const damValue = damElement.value;
-                const sebValue = sebElement.value;
-                assert(damValue === dam);
-                assert(sebValue === seb);
-                assert(damElement.getProperty('name').descriptor.writable === true);
+            //     const damElement = scan(dam);
+            //     const sebElement = scan(seb);
+            //     const damValue = damElement.value;
+            //     const sebValue = sebElement.value;
+            //     assert(damValue === dam);
+            //     assert(sebValue === seb);
+            //     assert(damElement.getProperty('name').descriptor.writable === true);
 
-                const compositeElement = damElement.compose(sebElement);
-                const compositeValue = compositeElement.value;
-                assert.deepEqual(compositeValue, expectedComposite);
-                assert.deepEqual(dam, {name: 'dam', item: {name: 'sword'}});
-            });
+            //     const compositeElement = damElement.compose(sebElement);
+            //     const compositeValue = compositeElement.value;
+            //     assert.deepEqual(compositeValue, expectedComposite);
+            //     assert.deepEqual(dam, {name: 'dam', item: {name: 'sword'}});
+            // });
 
             // this.add('compose wo arg must create a new object', function() {
             //     const object = {
