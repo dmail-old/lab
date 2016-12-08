@@ -3,7 +3,8 @@ import {
 } from './lab.js';
 
 const PrimitiveProperties = {
-    primitiveMark: true
+    primitiveMark: true,
+    fill() {}
 };
 
 const NullPrimitiveElement = Element.extend('null');

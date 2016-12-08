@@ -17,10 +17,6 @@ const Node = util.extend({
         }
     },
 
-    fill() {
-
-    },
-
     createNode(...args) {
         return this.createConstructor(...args);
     },
