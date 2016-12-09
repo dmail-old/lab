@@ -23,190 +23,15 @@ composition.construct.branch(); // et hop on ajoute un cas custom
 - une fois qu'on a tout ça on pousuis l'implémentation des examples
 */
 
-import {Lab, Element} from './src/lab.js';
-import util from './src/util.js';
-import {
-    NullPrimitiveElement,
-    UndefinedPrimitiveElement,
-    BooleanPrimitiveElement,
-    NumberPrimitiveElement,
-    StringPrimitiveElement,
-    SymbolPrimitiveElement
-} from './src/primitive.js';
-import {
-    ObjectElement,
-    PropertyElement,
-    DataPropertyElement,
-    AccessorPropertyElement,
-    BooleanElement,
-    NumberElement,
-    StringElement,
-    ArrayElement,
-    FunctionElement,
-    ErrorElement,
-    RegExpElement,
-    DateElement
-} from './src/composite.js';
-import {polymorph} from './src/polymorph.js';
+import {Element} from './src/lab.js';
+import {scan} from './src/transform.js';
 
-import defaultMalady from './src/maladies/default.js';
-
-Element.refine(defaultMalady);
 Element.refine({
     asElement() {
         // pointerNode will return the pointedElement
         // doing ctrl+c & ctrl+v on a symlink on windows copy the symlinked file and not the symlink
         return this;
     }
-});
-
-const PropertyDefinition = util.extend({
-    constructor(name, descriptor) {
-        this.name = name;
-        this.descriptor = descriptor;
-    }
-});
-
-// match
-(function() {
-    Element.refine({
-        match() {
-            return false;
-        }
-    });
-
-    // null primitive is special
-    NullPrimitiveElement.refine({
-        match(value) {
-            return value === null;
-        }
-    });
-    DataPropertyElement.refine({
-        match(value) {
-            return (
-                PropertyDefinition.isPrototypeOf(value) &&
-                value.descriptor.hasOwnProperty('value')
-            );
-        }
-    });
-    AccessorPropertyElement.refine({
-        match(value) {
-            return (
-                PropertyDefinition.isPrototypeOf(value) &&
-                value.descriptor.hasOwnProperty('value') === false
-            );
-        }
-    });
-
-    function valueTypeMatchTagName(value) {
-        return typeof value === this.tagName;
-    }
-    [
-        UndefinedPrimitiveElement,
-        BooleanPrimitiveElement,
-        NumberPrimitiveElement,
-        StringPrimitiveElement,
-        SymbolPrimitiveElement
-    ].forEach(function(Element) {
-        Element.refine({
-            match: valueTypeMatchTagName
-        });
-    });
-    function valueMatchConstructorPrototype(value) {
-        return this.valueConstructor.prototype.isPrototypeOf(value);
-    }
-    [
-        ObjectElement,
-        BooleanElement,
-        NumberElement,
-        StringElement,
-        ArrayElement,
-        FunctionElement,
-        ErrorElement,
-        RegExpElement,
-        DateElement
-    ].forEach(function(Element) {
-        Element.refine({
-            match: valueMatchConstructorPrototype
-        });
-    });
-})();
-
-const scan = function(value, parentNode) {
-    const element = Lab.findElementByValueMatch(value).create();
-    element.valueModel = value; // we need to remind valueModel if we want cyclic structure support
-    // we could enable this only when valueModel & value !=
-    element.value = element.scanValue(value);
-    if (parentNode) {
-        parentNode.appendChild(element);
-    }
-    element.scanChildren(value);
-    element.variation('added');
-    return element;
-};
-const scanValue = polymorph();
-scanValue.branch(
-    ObjectElement.asMatcherStrict(),
-    function() {
-        // on pourrait écrire return new arguments[0].constructor();
-        return {};
-    }
-);
-scanValue.branch(
-    PropertyElement.asMatcher(),
-    function(definition) {
-        return definition.name;
-    }
-);
-scanValue.branch(
-    function() {
-        return this.primitiveMark;
-    },
-    function(value) {
-        return value;
-    }
-);
-const scanChildren = polymorph();
-scanChildren.branch(
-    ObjectElement.asMatcher(),
-    function(value) {
-        Object.getOwnPropertyNames(value).forEach(function(name) {
-            const descriptor = Object.getOwnPropertyDescriptor(value, name);
-            const definition = PropertyDefinition.create(name, descriptor);
-            scan(definition, this);
-        }, this);
-    }
-);
-scanChildren.branch(
-    PropertyElement.asMatcher(),
-    function(definition) {
-        const descriptor = definition.descriptor;
-        Object.keys(descriptor).forEach(function(key) {
-            const propertyChild = scan(descriptor[key], this);
-            // pour le moment on set le nom sur propertyCHild
-            // c'est pas optimal parce que l'enfant n'a pas à savoir
-            // cela et ca rend un peu confus avec les propriété qui on aussi une propriété name
-            // idéalement les enfant d'une propriété devrait être stocké dans
-            // une map genre {writable: writableNode} et manipulé comme une liste là ou c'est nécéssaire
-            propertyChild.descriptorName = key;
-        }, this);
-    }
-);
-// disable prototype property disocverability on function to prevent infinite recursion (prototype is a cyclic structure)
-// FunctionElement.refine({
-//     scanChildren(value) {
-//             return Object.getOwnPropertyNames(value).filter(function(name) {
-//                 // do as if prototype property does not exists for now
-//                 // because every function.prototype is a circular structure
-//                 // due to prototype.constructor
-//                 return name !== 'prototype';
-//             });
-//         }
-//     }
-// });
-Element.refine({
-    scanValue: scanValue,
-    scanChildren: scanChildren
 });
 
 Element.refine({
@@ -277,18 +102,15 @@ export const test = {
         // }
 
         this.add('core', function() {
-            this.add('scan is mutable, compose is immutable', function() {
-                const object = {foo: true};
+            this.add('scanning object', function() {
+                const object = {name: 'foo'};
                 const scanned = scan(object);
-                // const composed = compose(object);
 
                 assert.deepEqual(scanned.value, object);
                 assert(scanned.value !== object);
-                // assert(composed.value !== object);
-                // assert(typeof composed.value === 'object');
             });
 
-            // this.add('object composition', function() {
+            // this.add('compose object', function() {
             //     const dam = {name: 'dam', item: {name: 'sword'}};
             //     const seb = {name: 'seb', item: {price: 10}, age: 10};
             //     const expectedComposite = {name: 'seb', item: {name: 'sword', price: 10}, age: 10};
@@ -297,14 +119,13 @@ export const test = {
             //     const sebElement = scan(seb);
             //     const damValue = damElement.value;
             //     const sebValue = sebElement.value;
-            //     assert(damValue === dam);
-            //     assert(sebValue === seb);
-            //     assert(damElement.getProperty('name').descriptor.writable === true);
+            //     assert.deepEqual(damValue, dam);
+            //     assert.deepEqual(sebValue, seb);
 
             //     const compositeElement = damElement.compose(sebElement);
             //     const compositeValue = compositeElement.value;
             //     assert.deepEqual(compositeValue, expectedComposite);
-            //     assert.deepEqual(dam, {name: 'dam', item: {name: 'sword'}});
+            //     assert.deepEqual(dam, {name: 'dam', item: {name: 'sword'}}, 'compose does not mutate ingredients');
             // });
 
             // this.add('compose wo arg must create a new object', function() {

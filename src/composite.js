@@ -5,14 +5,6 @@ import {PrimitiveProperties} from './primitive.js';
 
 // must be registered before ObjectElement because it must match before (during Lab.match)
 const PropertyElement = Element.extend('Property', {
-    get name() {
-        return this.value;
-    },
-
-    set name(name) {
-        this.value = name;
-    },
-
     can(what) {
         const lastChar = what[what.length - 1];
         let abilityName;
@@ -27,7 +19,7 @@ const PropertyElement = Element.extend('Property', {
 
     getChildByName(name) {
         return this.children.find(function(child) {
-            return child.descriptorName === name;
+            return child.name === name;
         });
     },
 
@@ -37,6 +29,10 @@ const PropertyElement = Element.extend('Property', {
 
     canEnumer() {
         return this.can('enumer');
+    },
+
+    canWrite() {
+        return this.can('write');
     },
 
     isIndex: (function() {
@@ -77,39 +73,48 @@ const PropertyElement = Element.extend('Property', {
         };
     })(),
 
-    install(element) {
-        const descriptor = this.createDescriptor();
-        Object.defineProperty(element.value, this.name, descriptor);
-    },
-
-    createDescriptor() {
-        const descriptor = {};
-        this.children.forEach(function(child) {
-            descriptor[child.descriptorName] = child.value;
-        });
-        return descriptor;
-    },
-
-    uninstall(element) {
-        delete element.value[this.name];
-    }
-});
-const DataPropertyElement = PropertyElement.extend('DataProperty', {
     get data() {
         return this.getChildByName('value');
     },
 
-    canWrite() {
-        return this.can('write');
-    }
-});
-const AccessorPropertyElement = PropertyElement.extend('AccessorProperty', {
     get getter() {
         return this.getChildByName('getter');
     },
 
     get setter() {
         return this.getChildByName('setter');
+    },
+
+    isData() {
+        return Boolean(this.getChildByName('writable'));
+    },
+
+    isAccessor() {
+        // seul la présent de get ou set garantie qu'on a bien un accessor
+        // parce que il existe un moment où propertyElement n'a pas encore
+        // d'enfant et donc n'est ni data ni accessor
+        // ça pose sûrement souci dailleurs lors de la transformation
+        // puisque du coup includeChild va retourner true tant qu'on ne sait pas quel type
+        // de propriété on souhait obtenir à la fin
+        return Boolean(this.getChildByName('get') || this.getChildByName('set'));
+    },
+
+    install(element) {
+        const descriptor = this.createDescriptor();
+        // console.log('set', this.name, '=', descriptor.value, 'on', element.value);
+        Object.defineProperty(element.value, this.name, descriptor);
+    },
+
+    createDescriptor() {
+        const descriptor = {};
+        this.children.forEach(function(child) {
+            descriptor[child.name] = child.value;
+        });
+        return descriptor;
+    },
+
+    uninstall(element) {
+        delete element.value[this.name];
     }
 });
 
@@ -153,8 +158,6 @@ const ErrorElement = ObjectElement.extend('Error',
 export {
     ObjectElement,
     PropertyElement,
-    DataPropertyElement,
-    AccessorPropertyElement,
     BooleanElement,
     NumberElement,
     StringElement,
