@@ -3,78 +3,40 @@
 import {Element} from './lab.js';
 import {PrimitiveProperties} from './primitive.js';
 
-function createConstructedByProperties(Constructor) {
-    return {
-        constructedBy: Constructor
-    };
-}
-
-// maybe rename compositePropertyElement
-// must be registered before ObjectElement because it must match before
-const ObjectPropertyElement = Element.extend('ObjectProperty', {
-    get definition() {
+// must be registered before ObjectElement because it must match before (during Lab.match)
+const PropertyElement = Element.extend('Property', {
+    get name() {
         return this.value;
     },
 
-    get name() {
-        return this.definition.name;
-    },
-
     set name(name) {
-        this.definition.name = name;
+        this.value = name;
     },
 
-    get descriptor() {
-        return this.definition.descriptor;
-    },
-
-    set descriptor(descriptor) {
-        this.definition.descriptor = descriptor;
-    },
-
-    get valueNode() {
-        const descriptor = this.descriptor;
-        return descriptor.hasOwnProperty('value') ? this.children[0] : null;
-    },
-
-    get getterNode() {
-        const descriptor = this.descriptor;
-        if (descriptor.hasOwnProperty('get')) {
-            return this.children[0];
+    can(what) {
+        const lastChar = what[what.length - 1];
+        let abilityName;
+        if (lastChar === 'a' || lastChar === 'e') {
+            abilityName = what.slice(0, -1) + 'able';
+        } else {
+            abilityName = what + 'able';
         }
-        return null;
+
+        return this.getChildByName(abilityName) !== false;
     },
 
-    get setterNode() {
-        const descriptor = this.descriptor;
-        if (descriptor.hasOwnProperty('set')) {
-            return this.children.length === 1 ? this.children[0] : this.children[1];
-        }
-        return null;
+    getChildByName(name) {
+        return this.children.find(function(child) {
+            return child.descriptorName === name;
+        });
     },
 
-    get propertyValue() {
-        const valueNode = this.valueNode;
-        return valueNode ? valueNode.value : undefined;
+    canConfigure() {
+        return this.can('configure');
     },
 
-    setValue(value) {
-        this.valueNode.value = value;
-        this.descriptor.value = value;
-        // il faut un moyen d'informer que la valeur a changé
-        // ptept aussi une méthode setGetter, setSetter
-        // euh là y'a un "souci" c'est que setValue suggère que la valeur est toujours du même type
-        // si le type change il faudrais recréer le bon valueNode
-        // si on veut reste full immutable faudrais de toutes façon recrée la valueNode et donc utiliser
-        // replaceChild ou un truc du genre
-    },
-
-    incrementValue() {
-        this.setValue(this.valueNode.value + 1);
-    },
-
-    decrementValue() {
-        this.setValue(this.valueNode.value - 1);
+    canEnumer() {
+        return this.can('enumer');
     },
 
     isIndex: (function() {
@@ -113,23 +75,63 @@ const ObjectPropertyElement = Element.extend('ObjectProperty', {
         return function() {
             return isPropertyNameValidArrayIndex(this.name);
         };
-    })()
+    })(),
+
+    install(element) {
+        const descriptor = this.createDescriptor();
+        Object.defineProperty(element.value, this.name, descriptor);
+    },
+
+    createDescriptor() {
+        const descriptor = {};
+        this.children.forEach(function(child) {
+            descriptor[child.descriptorName] = child.value;
+        });
+        return descriptor;
+    },
+
+    uninstall(element) {
+        delete element.value[this.name];
+    }
 });
+const DataPropertyElement = PropertyElement.extend('DataProperty', {
+    get data() {
+        return this.getChildByName('value');
+    },
+
+    canWrite() {
+        return this.can('write');
+    }
+});
+const AccessorPropertyElement = PropertyElement.extend('AccessorProperty', {
+    get getter() {
+        return this.getChildByName('getter');
+    },
+
+    get setter() {
+        return this.getChildByName('setter');
+    }
+});
+
+function createConstructedByProperties(Constructor) {
+    return {
+        valueConstructor: Constructor
+    };
+}
 
 const ObjectElement = Element.extend('Object', createConstructedByProperties(Object), {
     hasProperty(name) {
         return this.children.some(function(child) {
-            return ObjectPropertyElement.isPrototypeOf(child) && child.name === name;
+            return PropertyElement.isPrototypeOf(child) && child.name === name;
         });
     },
 
     getProperty(name) {
         return this.children.find(function(child) {
-            return ObjectPropertyElement.isPrototypeOf(child) && child.name === name;
+            return PropertyElement.isPrototypeOf(child) && child.name === name;
         });
     }
 });
-
 const ArrayElement = ObjectElement.extend('Array', createConstructedByProperties(Array));
 const BooleanElement = ObjectElement.extend('Boolean', createConstructedByProperties(Boolean));
 const NumberElement = ObjectElement.extend('Number', createConstructedByProperties(Number));
@@ -150,7 +152,9 @@ const ErrorElement = ObjectElement.extend('Error',
 
 export {
     ObjectElement,
-    ObjectPropertyElement,
+    PropertyElement,
+    DataPropertyElement,
+    AccessorPropertyElement,
     BooleanElement,
     NumberElement,
     StringElement,

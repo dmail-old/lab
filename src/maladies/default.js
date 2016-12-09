@@ -1,18 +1,42 @@
 /*
 raf
 
-- incrementValue/decrementValue qui devrait recréer un élément
--> attention cela va retrigger ensureCountTrackerSync alors qu'il ne "faudrais" pas, on veut juste incrémenter
-on sait déjà combien y'en a
+- maintenant que property.value = une instance de PropertyDefinition faut gérer
+ces cas là où on combine/touch les propriétés
+pourra être instancié
+- avoir la possibilité de modifier les valeurs via une API du genre element.replace(value)
+on utilisera cette api par example pour modifier la velur d'une propriété
+on pourra ainsi faire object.getProperty('name').replace('seb');
+peut être appeler ça "mutate" et pas "replace"
+et bim on peut modifier la valeur 'name' par 'seb' mais cette opération n'est pas immutable
+- incrementValue/decrementValue qui devrait recréer un élément en utilisant l'api décrite ci-dessus
+attention cela va retrigger ensureCountTrackerSync alors qu'il ne "faudrais" pas, on veut juste incrémenter
+on sait déjà combien y'en a, donc un moyen peut être de modifier cette valeur en désactivant ce listener spécifique
+quoiqu'en fait lorsqu'on passe par cette api de mutation ou alors par scan on ne trigger pas ensureCountTrackerSync
+puisque celui-ci est trigger par touchValue, composeValue et instantiateValue
 
+- on va pouvoir réactiver le fait de freeze les objets puisqu'en fait on va freeze
+mais on a un objet interne qui n'est pas freeze et qu'on peut donc instancier ;)
+attention il ne faudrais freeze que pour scan, dans les autres cas on ne freeze pas puisque l'objet
+attention aussi je propose une api pemettant de mutate ce qui est incohérent avec le fait que l'objet soit freeze
+on peut considérer freeze comme un moyen de se protéger et que seul la méthode mutate ou alors faire
+element.value.foo = true, permettent de modifier l'objet
+en tous les ca sil est trop tôt pour freeze l'object lors du scan c'est de la finition
 */
+
+// quelque chose manque : une propriété configurable combiné avec un non configurable
+// il faut aussi régléer ça
+// la combinaison des noms des deux propriétés aussi
+// autrement dit configurable, writable etc tout ça va devenir un child pour chaque propriété
 
 import util from '../util.js';
 import {polymorph} from '../polymorph.js';
 import {Element} from '../lab.js';
 import {
     ObjectElement,
-    ObjectPropertyElement,
+    PropertyElement,
+    DataPropertyElement,
+    AccessorPropertyElement,
     ArrayElement,
     FunctionElement
 } from '../composite.js';
@@ -23,10 +47,9 @@ function isCountTrackerValue(element) {
 }
 function isCountTracker(element) {
     return (
-        ObjectPropertyElement.isPrototypeOf(element) &&
+        DataPropertyElement.isPrototypeOf(element) &&
         element.name === 'length' &&
-        element.descriptor.hasOwnProperty('value') &&
-        isCountTrackerValue(element.valueNode)
+        isCountTrackerValue(element.data)
     );
 }
 function hasLengthPropertyWhichIsCountTracker(element) {
@@ -36,11 +59,12 @@ function hasLengthPropertyWhichIsCountTracker(element) {
     const lengthProperty = element.getProperty('length');
     return (
         lengthProperty &&
-        lengthProperty.descriptor.hasOwnProperty('value') &&
-        isCountTrackerValue(lengthProperty.valueNode)
+        DataPropertyElement.isPrototypeOf(lengthProperty) &&
+        isCountTrackerValue(lengthProperty.data)
     );
 }
 function cloneFunction(fn) {
+    // a true clone must handle new  https://gist.github.com/dmail/6e639ac50cec8074a346c9e10e76fa65
     return function() {
         return fn.apply(this, arguments);
     };
@@ -98,8 +122,17 @@ const Transformation = util.extend({
         // - les propriétés présentent sur l'objet restent définies avant les autres
         // - les propriétés du premier composant sont définies avant celles du second
         const existingChildren = product.readChildren();
-        const firstElementChildren = firstElement.children.slice();
-        const secondElementChildren = secondElement ? secondElement.children.slice() : [];
+        // ptet ici un
+        // filteredFirstElementChildren = firstElement.children.filter(function(child) {
+        //     return firstElement.filterChild(child, secondElement, product);
+        // });
+        // même chose pour second ou pas ?
+        // secondElement.filterChild(child, firstElement, product)
+        // sauf que je ne vois pas pk des enfants du second ne se retrouverait pas dedans au final
+        // en plus comment différencier dans ce cas le filterChild appelé sur firstElement et celui
+        // appelé sur second
+        const firstElementChildren = this.listChildren(product, firstElement);
+        const secondElementChildren = secondElement ? this.listChildren(product, secondElement) : [];
 
         // 1 : traite les enfants de firstComponent en conflit avec des enfants existants
         this.handleEveryCollision(product, firstElementChildren, existingChildren);
@@ -117,6 +150,15 @@ const Transformation = util.extend({
     },
     pack(product) {
         product.variation('added');
+    },
+
+    listChildren(product, element) {
+        // this must always return an array != of element.children
+        // because the returned array gets mutated by handleEveryCollision
+        // so that that we can after handle remaining child (child without conflict)
+        return element.children.filter(function(child) {
+            return product.ignoreChild(child) === false;
+        });
     },
 
     handleEveryCollision(product, children, otherChildren, markOtherAsHandled) {
@@ -150,7 +192,7 @@ const Transformation = util.extend({
 
     handleCollision(product, child, conflictualChild) {
         if (this.debug) {
-            if (ObjectPropertyElement.isPrototypeOf(child)) {
+            if (PropertyElement.isPrototypeOf(child)) {
                 console.log(
                     child.name, 'property collision'
                 );
@@ -174,7 +216,7 @@ const Transformation = util.extend({
 
     handleRemaining(product, child) {
         if (this.debug) {
-            if (ObjectPropertyElement.isPrototypeOf(child)) {
+            if (PropertyElement.isPrototypeOf(child)) {
                 console.log(
                     child.name, 'property has no collision'
                 );
@@ -216,43 +258,11 @@ Element.refine({variation});
 // the case above is disabled because freezing the value has an impact so that doing
 // instance = Object.create(this.value); instance.property = true; will throw
 
-// when an element is added/removed inside a property
-variation.when(
-    function() {
-        return (
-            this.parentNode &&
-            ObjectPropertyElement.isPrototypeOf(this.parentNode)
-        );
-    },
-    function(type) {
-        const child = this;
-        const property = this.parentNode;
-        const descriptorModel = property.valueModel.descriptor;
-        let descriptorProperty;
-
-        if (descriptorModel.hasOwnProperty('value')) {
-            descriptorProperty = 'value';
-        } else if (descriptorModel.hasOwnProperty('get') && property.children.length === 0) {
-            descriptorProperty = 'get';
-        } else if (descriptorModel.hasOwnProperty('set')) {
-            descriptorProperty = 'set';
-        } else {
-            console.error(child, 'is noting inside', property);
-        }
-
-        if (type === 'added') {
-            // console.log(property.name, 'property descriptor.' + descriptorProperty, '=', child.value);
-            property.descriptor[descriptorProperty] = child.value;
-        } else if (type === 'removed') {
-            delete property.descriptor[descriptorProperty];
-        }
-    }
-);
 // when a property is added/removed inside an ObjectElement
 variation.when(
     function() {
         return (
-            ObjectPropertyElement.isPrototypeOf(this) &&
+            PropertyElement.isPrototypeOf(this) &&
             this.parentNode &&
             ObjectElement.isPrototypeOf(this.parentNode)
         );
@@ -262,9 +272,9 @@ variation.when(
         const objectElement = this.parentNode;
         if (type === 'added') {
             // console.log('set', property.name, '=', property.descriptor.value, 'on', objectElement.value);
-            Object.defineProperty(objectElement.value, property.name, property.descriptor);
+            property.install(objectElement);
         } else if (type === 'removed') {
-            delete objectElement.value[property.name];
+            property.uninstall(objectElement);
         }
     }
 );
@@ -272,7 +282,7 @@ variation.when(
 variation.when(
     function() {
         return (
-            ObjectPropertyElement.isPrototypeOf(this) &&
+            PropertyElement.isPrototypeOf(this) &&
             this.isIndex() &&
             this.parentNode &&
             hasLengthPropertyWhichIsCountTracker(this.parentNode)
@@ -280,12 +290,13 @@ variation.when(
     },
     function(type) {
         const compositeTrackingItsIndexedProperty = this.parentNode;
-        const countTracker = compositeTrackingItsIndexedProperty.getProperty('length');
+        const countTrackerProperty = compositeTrackingItsIndexedProperty.getProperty('length');
+        const countTracker = countTrackerProperty.data;
 
         if (type === 'added') {
-            countTracker.incrementValue();
+            countTracker.mutate(countTracker.value + 1);
         } else if (type === 'removed') {
-            countTracker.decrementValue();
+            countTracker.mutate(countTracker.value - 1);
         }
     }
 );
@@ -316,7 +327,7 @@ touchValue.branch(
 touchValue.branch(
     ObjectElement.asMatcher(),
     function() {
-        return new this.constructedBy(this.value.valueOf()); // eslint-disable-line new-cap
+        return new this.valueConstructor(this.value.valueOf()); // eslint-disable-line new-cap
     }
 );
 // primitives
@@ -330,25 +341,13 @@ touchValue.branch(
 );
 // property
 touchValue.branch(
-    ObjectPropertyElement.asMatcher(),
+    PropertyElement.asMatcher(),
     function() {
-        return this.value;
+        return this.name;
     }
 );
 
 const touchType = polymorph();
-// property
-touchType.branch(
-    ObjectPropertyElement.asMatcher(),
-    function(parentNode) {
-        const touchedProperty = this.make(this.touchValue(parentNode));
-        const descriptor = this.descriptor;
-        const touchedDescriptor = {};
-        Object.assign(touchedDescriptor, descriptor);
-        touchedProperty.descriptor = touchedDescriptor;
-        return touchedProperty;
-    }
-);
 // other
 touchType.branch(
     null,
@@ -380,8 +379,8 @@ const somePrimitive = function(otherElement) {
 };
 const bothProperty = function(otherElement) {
     return (
-        ObjectPropertyElement.isPrototypeOf(this) &&
-        ObjectPropertyElement.isPrototypeOf(otherElement)
+        PropertyElement.isPrototypeOf(this) &&
+        PropertyElement.isPrototypeOf(otherElement)
     );
 };
 // pure element used otherElement touched value
@@ -398,14 +397,14 @@ combineValue.branch(
         return otherElement.touchValue(parentNode);
     }
 );
-// property use self touched value
+// property use otherProperty touched value (inherits name)
 combineValue.branch(
     bothProperty,
     function(otherProperty, parentNode) {
-        return this.touchValue(parentNode);
+        return otherProperty.touchValue(parentNode);
     }
 );
-// for now Object, Array, Function, ... combineValue ignores otherElement value
+// for now combinedValue on Object, Array, Function, etc ignores otherElement value
 // and return this touched value, however we can later modify this behaviour
 // to say that combinedString must be concatened or combine function must execute one after an other
 // Object
@@ -458,53 +457,41 @@ combineType.branch(
     function(otherProperty, parentNode) {
         // console.log('own property is not configurable, cannot make it react');
         return (
-            ObjectPropertyElement.isPrototypeOf(this) &&
-            this.descriptor.configurable === false &&
-            this.parentNode === parentNode
+            PropertyElement.isPrototypeOf(this) &&
+            this.parentNode === parentNode &&
+            this.canConfigure() === false
         );
     },
     function() {
         return null;
     }
 );
-// when both element are inside property they may not be combined in some case
-combineType.branch(
-    function(otherElement) {
-        const parentNode = this.parentNode;
-        const otherParentNode = otherElement.parentNode;
-        const bothInsideProperty = (
-            parentNode &&
-            ObjectPropertyElement.isPrototypeOf(parentNode) &&
-            otherParentNode &&
-            ObjectPropertyElement.isPrototypeOf(otherParentNode)
-        );
-        if (!bothInsideProperty) {
-            return false;
-        }
 
-        const property = parentNode;
-        const otherProperty = otherParentNode;
-        // do not combine valueNode when otherProperty is accessor property
-        const isValueNode = property.valueNode === this;
-        if (isValueNode) {
-            return otherProperty.descriptor.hasOwnProperty('value') === false;
-        }
-        const isGetterNode = property.getterNode === this;
-        // do not combine getterNode when otherProperty is value property
-        if (isGetterNode) {
-            return otherProperty.descriptor.hasOwnProperty('value');
-        }
-        // do not combine setterNode when otherProperty is value property
-        const isSetterNode = property.setterNode === this;
-        if (isSetterNode) {
-            return otherProperty.descriptor.hasOwnProperty('value');
-        }
-        return false;
-    },
-    function() {
-        return null;
+// data property ignores getter & setter
+DataPropertyElement.refine({
+    ignoreChild(child) {
+        return (
+            child.descriptorName === 'getter' ||
+            child.descriptorName === 'setter'
+        );
     }
-);
+});
+// accessor property ignores writable & values
+AccessorPropertyElement.refine({
+    ignoreChild(child) {
+        return (
+            child.descriptorName === 'writable' ||
+            child.descriptorName === 'value'
+        );
+    }
+});
+// other child will be handled normally
+Element.refine({
+    ignoreChild() {
+        return false;
+    }
+});
+
 // otherElement type prevails for Element and primitives
 combineType.branch(
     function() {
@@ -517,22 +504,6 @@ combineType.branch(
         return otherElement.make(this.combineValue(otherElement, parentNode));
     }
 );
-// property type composition, we have to pass descriptor
-combineType.branch(
-    function(otherElement) {
-        return (
-            ObjectPropertyElement.isPrototypeOf(this) &&
-            ObjectPropertyElement.isPrototypeOf(otherElement)
-        );
-    },
-    function(otherProperty, parentNode) {
-        const composedProperty = this.make(this.combineValue(otherProperty, parentNode));
-        const secondDescriptor = otherProperty.descriptor;
-        const composedDescriptor = Object.assign({}, secondDescriptor);
-        composedProperty.descriptor = composedDescriptor;
-        return composedProperty;
-    }
-);
 // objects let first type prevails
 combineType.branch(
     ObjectElement.asMatcher(),
@@ -542,35 +513,24 @@ combineType.branch(
 );
 
 const conflictsWith = polymorph();
-// property children conflict is special
+// property children conflict is special, only child of the same descriptorName are in conflict
 conflictsWith.branch(
     function(otherChild) {
         return (
-            ObjectPropertyElement.isPrototypeOf(this.parentNode) &&
-            ObjectPropertyElement.isPrototypeOf(otherChild.parentNode)
+            PropertyElement.isPrototypeOf(this.parentNode) &&
+            PropertyElement.isPrototypeOf(otherChild.parentNode)
         );
     },
     function(otherChild) {
-        const property = this.parentNode;
-        const otherProperty = otherChild.parentNode;
-
-        if (this === property.valueNode) {
-            return otherProperty.valueNode === otherChild;
-        }
-        if (this === property.getterNode) {
-            return otherProperty.getterNode === otherChild;
-        }
-        if (this === property.setterNode) {
-            return otherProperty.setterNode === otherChild;
-        }
+        return this.descriptorName === otherChild.descriptorName;
     }
 );
 // property conflict (use name)
 conflictsWith.branch(
     function(otherElement) {
         return (
-            ObjectPropertyElement.isPrototypeOf(this) &&
-            ObjectPropertyElement.isPrototypeOf(otherElement)
+            PropertyElement.isPrototypeOf(this) &&
+            PropertyElement.isPrototypeOf(otherElement)
         );
     },
     function(otherProperty) {
@@ -617,21 +577,12 @@ instantiateType.branch(
 instantiateType.branch(
     function() {
         return (
-            ObjectPropertyElement.isPrototypeOf(this) &&
-            this.descriptor.hasOwnProperty('value') &&
-            this.valueNode.primitiveMark
+            DataPropertyElement.isPrototypeOf(this) &&
+            this.data.primitiveMark
         );
     },
     function() {
         return null;
-    }
-);
-instantiateType.branch(
-    ObjectPropertyElement.asMatcher(),
-    function(parentNode) {
-        const property = this.make(this.instantiateValue(parentNode));
-        property.descriptor = Object.assign({}, this.descriptor);
-        return property;
     }
 );
 instantiateType.branch(null, function(parentNode) {
@@ -643,6 +594,12 @@ instantiateValue.branch(
     ObjectElement.asMatcher(),
     function() {
         return Object.create(this.value);
+    }
+);
+instantiateValue.branch(
+    PropertyElement.asMatcher(),
+    function(parentNode) {
+        return this.touchValue(parentNode);
     }
 );
 const InstantiateTransformation = Transformation.extend({
@@ -673,7 +630,7 @@ const instantiate = InstantiateTransformation.asMethod();
             const parentNode = arguments[arguments.length === 1 ? 0 : 1];
 
             return parentNode.children.reduce(function(previous, current) {
-                if (ObjectPropertyElement.isPrototypeOf(current) && current.isIndex()) {
+                if (PropertyElement.isPrototypeOf(current) && current.isIndex()) {
                     previous++;
                 }
                 return previous;
@@ -708,7 +665,7 @@ const debugArrayConcat = true;
 const ignoreConcatenedPropertyConflict = conflictsWith.branch(
     function() {
         return (
-            ObjectPropertyElement.isPrototypeOf(this) &&
+            PropertyElement.isPrototypeOf(this) &&
             this.isIndex() &&
             hasLengthPropertyWhichIsCountTracker(this.parentNode)
         );
@@ -728,14 +685,16 @@ conflictsWith.prefer(ignoreConcatenedPropertyConflict);
 const concatIndexedProperty = touchValue.branch(
     function(parentNode) {
         return (
-            ObjectPropertyElement.isPrototypeOf(this) &&
+            PropertyElement.isPrototypeOf(this) &&
             this.isIndex() &&
             hasLengthPropertyWhichIsCountTracker(parentNode)
         );
     },
     function(parentNode) {
         let index = this.value;
-        const length = parentNode.getProperty('length').propertyValue;
+        const lengthProperty = parentNode.getProperty('length');
+        const lengthData = lengthProperty.data;
+        const length = lengthData.value;
 
         if (length > 0) {
             const currentIndex = Number(index);

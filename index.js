@@ -35,7 +35,9 @@ import {
 } from './src/primitive.js';
 import {
     ObjectElement,
-    ObjectPropertyElement,
+    PropertyElement,
+    DataPropertyElement,
+    AccessorPropertyElement,
     BooleanElement,
     NumberElement,
     StringElement,
@@ -67,16 +69,32 @@ const PropertyDefinition = util.extend({
 
 // match
 (function() {
+    Element.refine({
+        match() {
+            return false;
+        }
+    });
+
     // null primitive is special
     NullPrimitiveElement.refine({
         match(value) {
             return value === null;
         }
     });
-    // property is special
-    ObjectPropertyElement.refine({
+    DataPropertyElement.refine({
         match(value) {
-            return PropertyDefinition.isPrototypeOf(value);
+            return (
+                PropertyDefinition.isPrototypeOf(value) &&
+                value.descriptor.hasOwnProperty('value')
+            );
+        }
+    });
+    AccessorPropertyElement.refine({
+        match(value) {
+            return (
+                PropertyDefinition.isPrototypeOf(value) &&
+                value.descriptor.hasOwnProperty('value') === false
+            );
         }
     });
 
@@ -95,7 +113,7 @@ const PropertyDefinition = util.extend({
         });
     });
     function valueMatchConstructorPrototype(value) {
-        return this.constructedBy.prototype.isPrototypeOf(value);
+        return this.valueConstructor.prototype.isPrototypeOf(value);
     }
     [
         ObjectElement,
@@ -116,7 +134,8 @@ const PropertyDefinition = util.extend({
 
 const scan = function(value, parentNode) {
     const element = Lab.findElementByValueMatch(value).create();
-    element.valueModel = value; // we nedd to remind valueModel if we want cyclic structure support
+    element.valueModel = value; // we need to remind valueModel if we want cyclic structure support
+    // we could enable this only when valueModel & value !=
     element.value = element.scanValue(value);
     if (parentNode) {
         parentNode.appendChild(element);
@@ -129,23 +148,14 @@ const scanValue = polymorph();
 scanValue.branch(
     ObjectElement.asMatcherStrict(),
     function() {
+        // on pourrait écrire return new arguments[0].constructor();
         return {};
     }
 );
 scanValue.branch(
-    ObjectPropertyElement.asMatcher(),
+    PropertyElement.asMatcher(),
     function(definition) {
-        const descriptor = definition.descriptor;
-        const scannedDescriptor = {};
-
-        scannedDescriptor.configurable = descriptor.configurable;
-        scannedDescriptor.writable = descriptor.writable;
-        scannedDescriptor.enumerable = descriptor.enumerable;
-
-        return PropertyDefinition.create(
-            definition.name,
-            scannedDescriptor
-        );
+        return definition.name;
     }
 );
 scanValue.branch(
@@ -168,23 +178,18 @@ scanChildren.branch(
     }
 );
 scanChildren.branch(
-    ObjectPropertyElement.asMatcher(),
+    PropertyElement.asMatcher(),
     function(definition) {
         const descriptor = definition.descriptor;
-
-        if (descriptor.hasOwnProperty('value')) {
-            const propertyValue = descriptor.value;
-            scan(propertyValue, this);
-        } else {
-            if (descriptor.hasOwnProperty('get')) {
-                const propertyGetter = descriptor.get;
-                scan(propertyGetter, this);
-            }
-            if (descriptor.hasOwnProperty('set')) {
-                const propertySetter = descriptor.set;
-                scan(propertySetter, this);
-            }
-        }
+        Object.keys(descriptor).forEach(function(key) {
+            const propertyChild = scan(descriptor[key], this);
+            // pour le moment on set le nom sur propertyCHild
+            // c'est pas optimal parce que l'enfant n'a pas à savoir
+            // cela et ca rend un peu confus avec les propriété qui on aussi une propriété name
+            // idéalement les enfant d'une propriété devrait être stocké dans
+            // une map genre {writable: writableNode} et manipulé comme une liste là ou c'est nécéssaire
+            propertyChild.descriptorName = key;
+        }, this);
     }
 );
 // disable prototype property disocverability on function to prevent infinite recursion (prototype is a cyclic structure)
