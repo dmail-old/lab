@@ -110,23 +110,23 @@ export const test = {
                 assert(scanned.value !== object);
             });
 
-            // this.add('compose object', function() {
-            //     const dam = {name: 'dam', item: {name: 'sword'}};
-            //     const seb = {name: 'seb', item: {price: 10}, age: 10};
-            //     const expectedComposite = {name: 'seb', item: {name: 'sword', price: 10}, age: 10};
+            this.add('compose object', function() {
+                const dam = {name: 'dam', item: {name: 'sword'}};
+                const seb = {name: 'seb', item: {price: 10}, age: 10};
+                const expectedComposite = {name: 'seb', item: {name: 'sword', price: 10}, age: 10};
 
-            //     const damElement = scan(dam);
-            //     const sebElement = scan(seb);
-            //     const damValue = damElement.value;
-            //     const sebValue = sebElement.value;
-            //     assert.deepEqual(damValue, dam);
-            //     assert.deepEqual(sebValue, seb);
+                const damElement = scan(dam);
+                const sebElement = scan(seb);
+                const damValue = damElement.value;
+                const sebValue = sebElement.value;
+                assert.deepEqual(damValue, dam);
+                assert.deepEqual(sebValue, seb);
 
-            //     const compositeElement = damElement.compose(sebElement);
-            //     const compositeValue = compositeElement.value;
-            //     assert.deepEqual(compositeValue, expectedComposite);
-            //     assert.deepEqual(dam, {name: 'dam', item: {name: 'sword'}}, 'compose does not mutate ingredients');
-            // });
+                const compositeElement = damElement.compose(sebElement);
+                const compositeValue = compositeElement.value;
+                assert.deepEqual(compositeValue, expectedComposite);
+                assert.deepEqual(dam, {name: 'dam', item: {name: 'sword'}}, 'compose does not mutate ingredients');
+            });
 
             // this.add('compose wo arg must create a new object', function() {
             //     const object = {

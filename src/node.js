@@ -121,4 +121,31 @@ Node.refine({
     }
 });
 
+Node.refine({
+    createAncestorIterable() {
+        let constituent = this;
+
+        return createIterable(function() {
+            let parentNode = constituent.parentNode;
+            constituent = parentNode;
+
+            const result = {
+                done: !parentNode,
+                value: parentNode
+            };
+
+            return result;
+        });
+    }
+});
+
+function createIterable(nextMethod) {
+    return {
+        [Symbol.iterator]: function() {
+            return this;
+        },
+        next: nextMethod
+    };
+}
+
 export default Node;

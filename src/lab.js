@@ -88,6 +88,19 @@ const Element = Node.extend({
         Element.tagName = tagName;
         Lab.register(Element, this);
         return Element;
+    },
+
+    get path() {
+        const paths = [];
+        if (this.name) {
+            paths.unshift(this.name);
+            for (let parentNode of this.createAncestorIterable()) {
+                if (parentNode.name) {
+                    paths.unshift(parentNode.name);
+                }
+            }
+        }
+        return '#' + paths.join('.');
     }
 });
 

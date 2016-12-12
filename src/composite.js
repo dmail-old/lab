@@ -101,7 +101,7 @@ const PropertyElement = Element.extend('Property', {
 
     install(element) {
         const descriptor = this.createDescriptor();
-        // console.log('set', this.name, '=', descriptor.value, 'on', element.value);
+        // console.log('set', this.name, '=', descriptor, 'on', element.value);
         Object.defineProperty(element.value, this.name, descriptor);
     },
 
@@ -114,6 +114,7 @@ const PropertyElement = Element.extend('Property', {
     },
 
     uninstall(element) {
+        // console.log('delete', this.name, 'on', element.value);
         delete element.value[this.name];
     }
 });

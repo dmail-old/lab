@@ -77,8 +77,11 @@ Element.refine({
 const PropertyDefinition = util.extend({
     constructor(name, descriptor) {
         this.name = name;
-        this.descriptor = descriptor;
-    }
+        if (descriptor) {
+            this.descriptor = descriptor;
+        }
+    },
+    descriptor: {}
 });
 function cloneFunction(fn) {
     // a true clone must handle new  https://gist.github.com/dmail/6e639ac50cec8074a346c9e10e76fa65
@@ -204,109 +207,127 @@ function cloneFunction(fn) {
     });
 })();
 
-function combineChildrenOneSource(sourceElement, destinationElement) {
-    const filteredSourceElementChildren = filterChildren(sourceElement, destinationElement);
-    const unConflictualSourceElementChildren = collideChildren(filteredSourceElementChildren, destinationElement);
+const combineChildren = (function() {
+    const debug = true;
 
-    return unConflictualSourceElementChildren;
-}
+    function combineChildrenOneSource(sourceElement, destinationElement) {
+        const filteredSourceElementChildren = filterChildren(sourceElement, destinationElement);
+        const unConflictualSourceElementChildren = collideChildren(filteredSourceElementChildren, destinationElement);
 
-function combineChildrenTwoSource(firstSourceElement, secondSourceElement, destinationElement) {
-    // afin d'obtenir un objet final ayant ses propriétés dans l'ordre le plus logique possible
-    // on a besoin de plusieurs étapes pour s'assurer que
-    // - les propriétés présentent sur l'objet restent définies avant les autres
-    // - les propriétés du premier composant sont définies avant celles du second
+        return unConflictualSourceElementChildren;
+    }
 
-    // 1: garde uniquement les enfants que destinationElement accepte
-    const filteredFirstSourceChildren = filterChildren(
-        firstSourceElement,
-        destinationElement
-    );
-    const filteredSecondSourceChildren = filterChildren(
-        secondSourceElement,
-        destinationElement
-    );
-    // 2 : met les enfants dont le conflit concerne  first ou second avec existing et récupère ce qui reste
-    const remainingFirstSourceChildren = collideChildren(
-        filteredFirstSourceChildren,
-        destinationElement
-    );
-    const remainingSecondSourceChildren = collideChildren(
-        filteredSecondSourceChildren,
-        destinationElement
-    );
-    // 3 : met les enfants pour lesquelles il y a un conflit entre first & second et récupère ce qui reste
-    const remainingChildren = collideRemainingChildren(
-        remainingFirstSourceChildren,
-        remainingSecondSourceChildren,
-        destinationElement
-    );
-    // 4 : retourne ce qui reste
-    return remainingChildren;
-}
+    function combineChildrenTwoSource(firstSourceElement, secondSourceElement, destinationElement) {
+        // afin d'obtenir un objet final ayant ses propriétés dans l'ordre le plus logique possible
+        // on a besoin de plusieurs étapes pour s'assurer que
+        // - les propriétés présentent sur l'objet restent définies avant les autres
+        // - les propriétés du premier composant sont définies avant celles du second
 
-function filterChildren(sourceElement, destinationElement) {
-    return sourceElement.children.filter(function(sourceElementChild) {
-        return destinationElement.includeChild(sourceElementChild);
-    });
-}
+        // 1: garde uniquement les enfants que destinationElement accepte
+        const filteredFirstSourceChildren = filterChildren(
+            firstSourceElement,
+            destinationElement
+        );
+        const filteredSecondSourceChildren = filterChildren(
+            secondSourceElement,
+            destinationElement
+        );
+        // 2 : met les enfants dont le conflit concerne  first ou second avec existing et récupère ce qui reste
+        const remainingFirstSourceChildren = collideChildren(
+            filteredFirstSourceChildren,
+            destinationElement
+        );
+        const remainingSecondSourceChildren = collideChildren(
+            filteredSecondSourceChildren,
+            destinationElement
+        );
+        // 3 : met les enfants pour lesquelles il y a un conflit entre first & second et récupère ce qui reste
+        const remainingChildren = collideRemainingChildren(
+            remainingFirstSourceChildren,
+            remainingSecondSourceChildren,
+            destinationElement
+        );
+        // 4 : retourne ce qui reste
+        return remainingChildren;
+    }
 
-function collideChildren(children, destinationElement) {
-    return children.filter(function(child) {
-        const destinationChild = findConflictualChild(child, destinationElement.children);
-        if (destinationChild) {
-            collideChild(child, destinationChild, destinationElement);
+    function filterChildren(sourceElement, destinationElement) {
+        return sourceElement.children.filter(function(sourceElementChild) {
+            if (destinationElement.includeChild(sourceElementChild) === false) {
+                if (debug) {
+                    console.log(sourceElementChild.path, 'cannot be included at', destinationElement.path);
+                }
+                return false;
+            }
             return true;
-        }
-        return false;
-    });
-}
-
-function findConflictualChild(child, children) {
-    return children.find(function(destinationChild) {
-        return child.conflictsWith(destinationChild);
-    }, this);
-}
-
-function collideChild(child, destinationChild, destinationElement) {
-    if (this.debug) {
-        if (PropertyElement.isPrototypeOf(child)) {
-            console.log(
-                child.name, 'property collision'
-            );
-        } else {
-            console.log(
-                'value collision between',
-                destinationChild.value, 'and', child.value,
-                'for property', destinationChild.parentNode.name
-            );
-        }
+        });
     }
 
-    return destinationChild.combine(child, destinationElement);
-}
-
-function collideRemainingChildren(remainingFirstChildren, remainingSecondChildren, destinationElement) {
-    const remainingChildren = [];
-    const conflictualSecondChildren = [];
-
-    for (let remainingFirstChild of remainingFirstChildren) {
-        const remainingSecondChild = findConflictualChild(remainingFirstChild, remainingSecondChildren);
-        if (remainingSecondChild) {
-            collideChild(remainingFirstChild, remainingSecondChild, destinationElement);
-            conflictualSecondChildren.push(remainingSecondChild);
-        } else {
-            remainingChildren.push(remainingFirstChild);
-        }
-    }
-    for (let remainingSecondChild of remainingSecondChildren) {
-        if (conflictualSecondChildren.indexOf(remainingSecondChild) === -1) {
-            remainingChildren.push(remainingSecondChild);
-        }
+    function collideChildren(children, destinationElement) {
+        return children.filter(function(child) {
+            const destinationChild = findConflictualChild(child, destinationElement.children);
+            if (destinationChild) {
+                collideChild(child, destinationChild, destinationElement);
+                return false;
+            }
+            return true;
+        });
     }
 
-    return remainingChildren;
-}
+    function findConflictualChild(child, children) {
+        return children.find(function(destinationChild) {
+            return child.conflictsWith(destinationChild);
+        }, this);
+    }
+
+    function collideChild(child, otherChild, destinationElement) {
+        if (debug) {
+            if (PropertyElement.isPrototypeOf(otherChild)) {
+                console.log(
+                    'collision for', otherChild.path
+                );
+            } else {
+                console.log(
+                    'collision for', otherChild.path, 'between', otherChild.value, 'and', child.value
+                );
+            }
+        }
+
+        otherChild.combine(child, destinationElement).produce();
+    }
+
+    function collideRemainingChildren(remainingFirstChildren, remainingSecondChildren, destinationElement) {
+        const remainingChildren = [];
+        const conflictualSecondChildren = [];
+
+        for (let remainingFirstChild of remainingFirstChildren) {
+            const remainingSecondChild = findConflictualChild(remainingFirstChild, remainingSecondChildren);
+            if (remainingSecondChild) {
+                collideChild(remainingFirstChild, remainingSecondChild, destinationElement);
+                conflictualSecondChildren.push(remainingSecondChild);
+            } else {
+                remainingChildren.push(remainingFirstChild);
+            }
+        }
+        for (let remainingSecondChild of remainingSecondChildren) {
+            if (conflictualSecondChildren.indexOf(remainingSecondChild) === -1) {
+                remainingChildren.push(remainingSecondChild);
+            }
+        }
+
+        return remainingChildren;
+    }
+
+    return function combineChildren() {
+        if (arguments.length === 2) {
+            return combineChildrenOneSource.apply(this, arguments);
+        }
+        if (arguments.length === 3) {
+            return combineChildrenTwoSource.apply(this, arguments);
+        }
+        throw new Error('combineChildren expect exactly 2 or 3 arguments');
+    };
+})();
 
 const CancelTransformation = {};
 const Transformation = util.extend({
@@ -352,17 +373,15 @@ const Transformation = util.extend({
         product.variation('added');
     },
 
-    produce() {
+    createProduct() {
         let product;
 
         try {
             const args = this.args;
             const value = this.make(...args);
             product = this.transform(value, ...args);
-            if (this.filter(product, ...args)) {
-                this.move(product, ...args);
-                this.fill(product, ...args);
-                this.pack(product, ...args);
+            if (this.filter(product, ...args) === false) {
+                product = undefined;
             }
         } catch (e) {
             if (e === CancelTransformation) {
@@ -372,6 +391,17 @@ const Transformation = util.extend({
             }
         }
 
+        return product;
+    },
+
+    produce() {
+        const product = this.createProduct();
+        if (product) {
+            const args = this.args;
+            this.move(product, ...args);
+            this.fill(product, ...args);
+            this.pack(product, ...args);
+        }
         return product;
     }
 });
@@ -412,6 +442,11 @@ const ScanTransformation = Transformation.extend({
 });
 const scan = function(...args) {
     return ScanTransformation.create(...args).produce();
+};
+const scanProduct = function(value, name) {
+    const element = ScanTransformation.make(value);
+    ScanTransformation.transform(element, value, name);
+    return element;
 };
 
 scanValue.branch(
@@ -458,12 +493,14 @@ const TouchTransformation = Transformation.extend({
         return elementModel.touchValue(parentNode);
     },
 
-    transform(value, elementModel, parentNode) {
-        return scan(value, elementModel.name, parentNode);
+    transform(touchedValue, elementModel) {
+        const product = scanProduct(touchedValue, elementModel.name);
+        return product;
     },
 
-    fill(product, elementModel) {
-        const remainingChildren = combineChildrenOneSource(elementModel, product);
+    fill(product, elementModel, parentNode) {
+        ScanTransformation.fill.call(this, product, product.valueModel, elementModel.name, parentNode);
+        const remainingChildren = combineChildren(elementModel, product);
         for (let child of remainingChildren) {
             child.touch(product).produce();
         }
@@ -479,14 +516,29 @@ const CombineTransformation = Transformation.extend({
     },
 
     transform(combinedValue, firstElement, secondElement) {
-        const product = scan(combinedValue);
+        // comment je sais le nom du produit ??????
+        // soit c'est forcément celui de firstElement parce qu'il ont le même
+        // soit dans le cas des propriétés il faut choisir
+        // et ce choix est fait par combineValue mais je n'ai pas la main dessus
+        // je rapelle qu'idéalement une valeur ne DOIT pas savoir de qu'elle propriété elle provient
+        // les objet propriétés ne sont donc pas des éléments comme les autres
+        // ils forments le lien entre deux valeurs mais ne sont pas des valeur
+        let product;
+        if (PropertyDefinition.isPrototypeOf(combinedValue)) {
+            product = scanProduct(combinedValue, combinedValue.name);
+        } else {
+            product = scanProduct(combinedValue, firstElement.name);
+        }
+
         product.firstComponent = firstElement;
         product.secondComponent = secondElement;
         return product;
     },
 
     fill(product, firstElement, secondElement) {
-        const remainingChildren = combineChildrenTwoSource(firstElement, secondElement, product);
+        ScanTransformation.fill.call(this, product, product.valueModel);
+
+        const remainingChildren = combineChildren(firstElement, secondElement, product);
         for (let child of remainingChildren) {
             child.touch(product).produce();
         }
@@ -506,7 +558,7 @@ const InstantiateTransformation = Transformation.extend({
     },
 
     fill(product, elementModel) {
-        const remainingChildren = combineChildrenOneSource(elementModel, product);
+        const remainingChildren = combineChildren(elementModel, product);
         for (let child of remainingChildren) {
             child.instantiate(product).produce();
         }
@@ -604,7 +656,7 @@ touchValue.branch(
 touchValue.branch(
     PropertyElement.asMatcher(),
     function() {
-        return PropertyDefinition.create(this.name, {});
+        return PropertyDefinition.create(this.name);
     }
 );
 // this case happens with array length property
@@ -872,7 +924,7 @@ instantiateValue.branch(
                 }
             }
 
-            return index;
+            return PropertyDefinition.create(index);
         }
     );
     touchValue.prefer(concatIndexedProperty);
