@@ -47,11 +47,16 @@ import util from './util.js';
 
 const Instruction = util.extend({
     constructor(sequence) {
-        this.sequence = sequence;
+        if (sequence) {
+            this.sequence = sequence;
+        }
     },
     exclusive: false,
     match() {
         throw new Error('must be implemented');
+    },
+    sequence() {
+        // noop
     }
 });
 
