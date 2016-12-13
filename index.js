@@ -97,6 +97,7 @@ export const test = {
     modules: ['@node/assert'],
 
     main(assert) {
+        /*
         this.add('scan', function() {
             this.add('scanning object', function() {
                 const object = {name: 'foo'};
@@ -127,7 +128,6 @@ export const test = {
                 assert.deepEqual(dam, {name: 'dam', item: {name: 'sword'}}, 'compose does not mutate ingredients');
             });
 
-            /*
             this.add('compose without argument', function() {
                 const object = {
                     item: {}
@@ -160,10 +160,8 @@ export const test = {
                 });
                 assert(typeof composite.value.name === 'object');
             });
-            */
         });
 
-        /*
         this.add('construct', function() {
             function assertPrototype(instance, prototype) {
                 assert(Object.getPrototypeOf(instance) === prototype);
@@ -187,21 +185,24 @@ export const test = {
         */
 
         this.add('array', function() {
-            // this.add('array concatenation', function() {
-            //     const damFriends = ['seb', 'clément'];
-            //     damFriends.foo = 'foo';
-            //     const sandraFriends = ['sumaya'];
-            //     sandraFriends.bar = 'bar';
-            //     const expectedComposite = ['seb', 'clément', 'sumaya'];
-            //     expectedComposite.foo = damFriends.foo;
-            //     expectedComposite.bar = sandraFriends.bar;
+            this.add('array concatenation', function() {
+                const damFriends = ['seb', 'clément'];
+                damFriends.foo = 'foo';
+                const sandraFriends = ['sumaya'];
+                sandraFriends.bar = 'bar';
+                const expectedComposite = ['seb', 'clément', 'sumaya'];
+                expectedComposite.foo = damFriends.foo;
+                expectedComposite.bar = sandraFriends.bar;
 
-            //     const damFriendsElement = scan(damFriends);
-            //     const sandraFriendsElement = scan(sandraFriends);
-            //     const compositeFriendsElement = damFriendsElement.compose(sandraFriendsElement);
+                const damFriendsElement = scan(damFriends);
+                const sandraFriendsElement = scan(sandraFriends);
+                const compositeFriendsElement = damFriendsElement.compose(sandraFriendsElement);
 
-            //     assert.deepEqual(compositeFriendsElement.value, expectedComposite);
-            // });
+                assert.deepEqual(compositeFriendsElement.value, expectedComposite);
+                // inutile ici puisqu'on fonctionne avec des tableaux mais les arraylike devront vérifier ça
+                // parce que la length ne seras pas magiquement la bonne sur l'objet final
+                // assert(compositeFriendsElement.getProperty('length').data.value === expectedComposite.length);
+            });
 
             // this.add('scan + compose array', function() {
             //     const array = [0, 1];

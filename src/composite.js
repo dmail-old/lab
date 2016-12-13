@@ -35,44 +35,6 @@ const PropertyElement = Element.extend('Property', {
         return this.can('write');
     },
 
-    isIndex: (function() {
-        const STRING = 0; // name is a string it cannot be an array index
-        const INFINITE = 1; // name is casted to Infinity, NaN or -Infinity, it cannot be an array index
-        const FLOATING = 2; // name is casted to a floating number, it cannot be an array index
-        const NEGATIVE = 3; // name is casted to a negative integer, it cannot be an array index
-        const TOO_BIG = 4; // name is casted to a integer above Math.pow(2, 32) - 1, it cannot be an array index
-        const VALID = 5; // name is a valid array index
-        const maxArrayIndexValue = Math.pow(2, 32) - 1;
-
-        function getArrayIndexStatusForString(name) {
-            if (isNaN(name)) {
-                return STRING;
-            }
-            const number = Number(name);
-            if (isFinite(number) === false) {
-                return INFINITE;
-            }
-            if (Math.floor(number) !== number) {
-                return FLOATING;
-            }
-            if (number < 0) {
-                return NEGATIVE;
-            }
-            if (number > maxArrayIndexValue) {
-                return TOO_BIG;
-            }
-            return VALID;
-        }
-
-        function isPropertyNameValidArrayIndex(propertyName) {
-            return getArrayIndexStatusForString(propertyName) === VALID;
-        }
-
-        return function() {
-            return isPropertyNameValidArrayIndex(this.name);
-        };
-    })(),
-
     get data() {
         return this.getChildByName('value');
     },
@@ -101,7 +63,7 @@ const PropertyElement = Element.extend('Property', {
 
     install(element) {
         const descriptor = this.createDescriptor();
-        // console.log('set', this.name, '=', descriptor, 'on', element.value);
+        console.log('set', this.name, '=', descriptor, 'on', element.value);
         Object.defineProperty(element.value, this.name, descriptor);
     },
 

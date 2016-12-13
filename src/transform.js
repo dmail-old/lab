@@ -1,17 +1,6 @@
 /*
 raf
 
-- avoir la possibilité de modifier les valeurs via une API du genre element.replace(value)
-on utilisera cette api par example pour modifier la velur d'une propriété
-on pourra ainsi faire object.getProperty('name').replace('seb');
-peut être appeler ça "mutate" et pas "replace"
-et bim on peut modifier la valeur 'name' par 'seb' mais cette opération ne recréé pas toute la structure
-- incrementValue/decrementValue qui devrait recréer un élément en utilisant l'api décrite ci-dessus
-attention cela va retrigger ensureCountTrackerSync alors qu'il ne "faudrais" pas, on veut juste incrémenter
-on sait déjà combien y'en a, donc un moyen peut être de modifier cette valeur en désactivant ce listener spécifique
-quoiqu'en fait lorsqu'on passe par cette api de mutation ou alors par scan on ne trigger pas ensureCountTrackerSync
-puisque celui-ci est trigger par touchValue, composeValue et instantiateValue
-
 - faudra tester la composition d'élément existant, en gros combineValue lorsque larg est un déjà un élément
 
 // pour le moment on set le nom sur propertyCHild
@@ -438,6 +427,15 @@ const Transformation = util.extend({
 Element.hooks.removed = function() {
     this.variation('removed');
 };
+Element.refine({
+    mutate(value) {
+        const product = scanProduct(value, this.name);
+        this.replace(product);
+        product.scanValue();
+        product.variation('change', this);
+        return product;
+    }
+});
 
 const touchValue = polymorph();
 const TouchTransformation = Transformation.extend({
@@ -535,6 +533,23 @@ variation.when(
         }
     }
 );
+// quand un élément de la description d'une propriété change, réinstalle la sur son objet
+// amélioration : pas besoin de faire ça sur la valeur de la propriété length dans un tableau (javascript le fait auto)
+variation.when(
+    function(type) {
+        const parentNode = this.parentNode;
+
+        return (
+            type === 'change' &&
+            PropertyElement.isPrototypeOf(parentNode) &&
+            parentNode.parentNode &&
+            ObjectElement.isPrototypeOf(parentNode.parentNode)
+        );
+    },
+    function() {
+        this.parentNode.install(this.parentNode.parentNode);
+    }
+);
 
 // property children conflict is special, only child of the same descriptorName are in conflict
 conflictsWith.branch(
@@ -610,6 +625,10 @@ touchValue.branch(
 );
 // this case happens with array length property
 // or function name property, in that case we preserve the current property of the compositeObject
+// -> à supprimer on laissera ceci se produire, à la limite on mettra un warning
+// mais on va par contre lister les cas où ça peut se produire et éviter l'erreur
+// array length c'est déjà fait pour function.name ça dépend de l'environement
+// donc on test et si besoin on empêche les noms de fonction d'écraser l'existant
 combineValue.branch(
     function(otherElement, parentNode) {
         // console.log('own property is not configurable, cannot make it react');
@@ -620,6 +639,7 @@ combineValue.branch(
         );
     },
     function() {
+        console.warn('prevent transformation because property is not configurable');
         throw CancelTransformation;
     }
 );
@@ -735,53 +755,116 @@ instantiateValue.branch(
 
 /* ---------------- countTracker ---------------- */
 (function() {
-    const countTrackerPropertyName = 'length';
-
-    function isCountTrackerValue(element) {
-        // we should ensure value is an integer between 0 and max allowed length
-        return element.tagName === 'number';
-    }
-    function isCountTracker(element) {
-        return (
-            PropertyElement.isPrototypeOf(element) &&
-            element.name === countTrackerPropertyName &&
-            element.isData() &&
-            isCountTrackerValue(element.data)
-        );
-    }
-    function hasLengthPropertyWhichIsCountTracker(element) {
-        if (ObjectElement.isPrototypeOf(element) === false) {
-            return false;
+    const STRING = 0; // name is a string it cannot be an array index
+    const INFINITE = 1; // name is casted to Infinity, NaN or -Infinity, it cannot be an array index
+    const FLOATING = 2; // name is casted to a floating number, it cannot be an array index
+    const NEGATIVE = 3; // name is casted to a negative integer, it cannot be an array index
+    const TOO_BIG = 4; // name is casted to a integer above Math.pow(2, 32) - 1, it cannot be an array index
+    const VALID = 5; // name is a valid array index
+    const maxArrayLength = Math.pow(2, 32) - 1;
+    const maxArrayIndex = maxArrayLength - 1;
+    function getArrayIndexStatusForString(name) {
+        if (isNaN(name)) {
+            return STRING;
         }
-        const countTrackerProperty = element.getProperty(countTrackerPropertyName);
-        return (
-            countTrackerProperty &&
-            countTrackerProperty.isData() &&
-            isCountTrackerValue(countTrackerProperty.data)
-        );
+        return getArrayIndexStatusForNumber(Number(name));
+    }
+    function getArrayIndexStatusForNumber(number) {
+        let status = getNumberStatus(number);
+        if (status === undefined) {
+            if (number > maxArrayIndex) {
+                status = TOO_BIG;
+            } else {
+                status = VALID;
+            }
+        }
+        return status;
+    }
+    function getNumberStatus(number) {
+        let status;
+        if (isFinite(number) === false) {
+            status = INFINITE;
+        } else if (Math.floor(number) !== number) {
+            status = FLOATING;
+        } else if (number < 0) {
+            status = NEGATIVE;
+        }
+        return status;
+    }
+    function getArrayLengthStatusForNumber(number) {
+        let status = getNumberStatus(number);
+        if (status === undefined) {
+            if (number > maxArrayLength) {
+                status = TOO_BIG;
+            } else {
+                status = VALID;
+            }
+        }
+        return status;
     }
 
+    const countTrackerPropertyName = 'length';
     Element.refine({
-        countTrackerPropertyName,
-        hasLengthPropertyWhichIsCountTracker
+        isCountTrackerValue() {
+            return (
+                this.tagName === 'number' &&
+                getArrayLengthStatusForNumber(this.value) === VALID
+            );
+        },
+
+        isIndexedProperty() {
+            return (
+                PropertyElement.isPrototypeOf(this) &&
+                getArrayIndexStatusForString(this.name) === VALID
+            );
+        },
+
+        isCountTrackerProperty() {
+            return (
+                PropertyElement.isPrototypeOf(this) &&
+                this.name === countTrackerPropertyName &&
+                this.isData() &&
+                this.data.isCountTrackerValue()
+            );
+        },
+
+        getCountTrackerProperty() {
+            if (ObjectElement.isPrototypeOf(this)) {
+                return this.getProperty(countTrackerPropertyName);
+            }
+            return null;
+        },
+
+        hasCountTrackerProperty() {
+            const countTrackerProperty = this.getCountTrackerProperty();
+            return (
+                countTrackerProperty &&
+                countTrackerProperty.isData() &&
+                countTrackerProperty.data.isCountTrackerValue()
+            );
+        }
     });
 
     // when an indexed property is added/removed inside an Element having a property count tracker
     variation.when(
         function() {
             return (
-                PropertyElement.isPrototypeOf(this) &&
-                this.isIndex() &&
+                this.isIndexedProperty() &&
                 this.parentNode &&
-                hasLengthPropertyWhichIsCountTracker(this.parentNode)
+                this.parentNode.hasCountTrackerProperty()
             );
         },
         function(type) {
-            const compositeTrackingItsIndexedProperty = this.parentNode;
-            const countTrackerProperty = compositeTrackingItsIndexedProperty.getProperty(countTrackerPropertyName);
+            const countTrackerProperty = this.parentNode.getCountTrackerProperty();
             const countTracker = countTrackerProperty.data;
 
             if (type === 'added') {
+                // problème ici : ce mutate ne vas pas entrainer un defineProperty
+                // puisque c'est property.value qui est modifié et pas property
+                // et si dans variation je fait un defineProperty chaque fois qu'un élément de description
+                // de la propriété est modifié chuis mal
+                // par contre comme ici il s'agit d'un replace
+                // je peux potentiellement le savoir et donc ne régir qu'en cas de replace
                 countTracker.mutate(countTracker.value + 1);
             } else if (type === 'removed') {
                 countTracker.mutate(countTracker.value - 1);
@@ -789,36 +872,27 @@ instantiateValue.branch(
         }
     );
 
-    // this case exists because array length property is not configurable
-    // because of that we cannot redefine it when composing array with arraylike
-    // so when there is a already a length property assume it's in sync
-    const preventArrayLengthCombine = combineValue.branch(
-        function(otherProperty, parentNode) {
-            return (
-                isCountTracker(this) &&
-                hasLengthPropertyWhichIsCountTracker(parentNode)
-            );
-        },
-        function() {
-            throw CancelTransformation;
-        }
-    );
-    combineValue.prefer(preventArrayLengthCombine);
-
     // length count tracker must be in sync with current amount of indexed properties
     // doit se produire pour touch, combine et instantiate mais pas scan
     [touchValue, combineValue, instantiateValue].forEach(function(method) {
         const ensureCountTrackerSync = method.branch(
             function() {
-                return isCountTracker(this);
+                const parentNode = arguments[arguments.length === 1 ? 0 : 1];
+
+                return (
+                    this.isCountTrackerValue() &&
+                    parentNode.isCountTrackerProperty() &&
+                    parentNode.data === this
+                );
             },
             function() {
                 // for touchValue & instantiateValue parentNode is the first argument
                 // but for combineValue its the second
                 const parentNode = arguments[arguments.length === 1 ? 0 : 1];
+                const ancestorObject = parentNode.parentNode;
 
-                return parentNode.children.reduce(function(previous, current) {
-                    if (PropertyElement.isPrototypeOf(current) && current.isIndex()) {
+                return ancestorObject.children.reduce(function(previous, current) {
+                    if (current.isIndexedProperty()) {
                         previous++;
                     }
                     return previous;
@@ -827,25 +901,43 @@ instantiateValue.branch(
         );
         method.prefer(ensureCountTrackerSync);
     });
+
+    // this case exists because array length property is not configurable
+    // because of that we cannot redefine it when composing array with arraylike
+    // so when there is a already a length property assume it's in sync
+    const preventArrayLengthCombine = combineValue.branch(
+        function() {
+            return (
+                this.name === 'length' &&
+                PropertyElement.isPrototypeOf(this) &&
+                this.parentNode &&
+                ArrayElement.isPrototypeOf(this.parentNode)
+            );
+        },
+        function() {
+            console.log('cancel current array length transformation');
+            throw CancelTransformation;
+        }
+    );
+    combineValue.prefer(preventArrayLengthCombine);
 })();
 
 /* ---------------- array concatenation ---------------- */
 (function() {
-    const debugArrayConcat = true;
+    const debug = true;
     const ignoreConcatenedPropertyConflict = conflictsWith.branch(
-        function() {
+        function(otherProperty) {
             return (
-                PropertyElement.isPrototypeOf(this) &&
-                this.isIndex() &&
-                this.parentNode.hasLengthPropertyWhichIsCountTracker()
+                this.name === otherProperty.name &&
+                this.isIndexedProperty() &&
+                this.parentNode &&
+                this.parentNode.hasCountTrackerProperty()
             );
         },
         function(otherProperty) {
-            if (debugArrayConcat) {
+            if (debug) {
                 console.log(
-                    'ignoring conflict for',
-                    otherProperty.descriptor.value,
-                    'because it will be concatened'
+                    'ignoring conflict at', this.path, 'because', otherProperty.data.value, 'will be concatened'
                 );
             }
             return false;
@@ -855,23 +947,30 @@ instantiateValue.branch(
     const concatIndexedProperty = touchValue.branch(
         function(parentNode) {
             return (
-                PropertyElement.isPrototypeOf(this) &&
-                this.isIndex() &&
+                this.isIndexedProperty() &&
                 parentNode &&
-                parentNode.hasLengthPropertyWhichIsCountTracker()
+                parentNode.hasCountTrackerProperty()
             );
         },
         function(parentNode) {
-            let index = this.value;
-            const countTrackerProperty = parentNode.getProperty(parentNode.countTrackerPropertyName);
+            let index = this.value.name;
+            const countTrackerProperty = parentNode.getCountTrackerProperty();
             const countTrackerData = countTrackerProperty.data;
             const countTrackerValue = countTrackerData.value;
 
+            if (debug) {
+                console.log(
+                    'concat', this.data.value,
+                    'inside', parentNode.value, parentNode.value.length, countTrackerValue
+                );
+            }
+
             if (countTrackerValue > 0) {
                 const currentIndex = Number(index);
-                const concatenedIndex = currentIndex + countTrackerValue;
+                const concatenedIndex = countTrackerValue;
+                // currentIndex + countTrackerValue;
                 index = String(concatenedIndex);
-                if (debugArrayConcat) {
+                if (debug) {
                     console.log('index updated from', currentIndex, 'to', concatenedIndex);
                 }
             }
