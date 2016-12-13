@@ -12,13 +12,7 @@ on sait déjà combien y'en a, donc un moyen peut être de modifier cette valeur
 quoiqu'en fait lorsqu'on passe par cette api de mutation ou alors par scan on ne trigger pas ensureCountTrackerSync
 puisque celui-ci est trigger par touchValue, composeValue et instantiateValue
 
-- on va pouvoir réactiver le fait de freeze les objets puisqu'en fait on va freeze
-mais on a un objet interne qui n'est pas freeze et qu'on peut donc instancier ;)
-attention il ne faudrais freeze que pour scan, dans les autres cas on ne freeze pas puisque l'objet
-attention aussi je propose une api pemettant de mutate ce qui est incohérent avec le fait que l'objet soit freeze
-on peut considérer freeze comme un moyen de se protéger et que seul la méthode mutate ou alors faire
-element.value.foo = true, permettent de modifier l'objet
-en tous les ca sil est trop tôt pour freeze l'object lors du scan c'est de la finition
+- faudra tester la composition d'élément existant, en gros combineValue lorsque larg est un déjà un élément
 
 // pour le moment on set le nom sur propertyCHild
 // c'est pas optimal parce que l'enfant n'a pas à savoir
@@ -83,32 +77,6 @@ const PropertyDefinition = util.extend({
     },
     descriptor: {}
 });
-function cloneFunction(fn) {
-    // a true clone must handle new  https://gist.github.com/dmail/6e639ac50cec8074a346c9e10e76fa65
-    return function() {
-        return fn.apply(this, arguments);
-    };
-}
-// const DataPropertyElement = PropertyElement.extend('DataPropertyElement', {
-//     includeChild() {
-//         return (
-//             child.descriptorName === 'configurable' ||
-//             child.descriptorName === 'enumerable' ||
-//             child.descriptorName === 'writable' ||
-//             child.descriptorName === 'value'
-//         );
-//     }
-// });
-// const AccessorPropertyElement = PropertyElement.extend('DataPropertyElement', {
-//     includeChild() {
-//         return (
-//             child.descriptorName === 'configurable' ||
-//             child.descriptorName === 'enumerable' ||
-//             child.descriptorName === 'get' ||
-//             child.descriptorName === 'set'
-//         );
-//     }
-// });
 
 // match
 (function() {
@@ -165,10 +133,65 @@ function cloneFunction(fn) {
     });
 })();
 
+const scanValue = polymorph();
+const scanProduct = function(value, name) {
+    if (Element.isPrototypeOf(value)) {
+        console.warn('scanning an element is not supposed to happen for now');
+        return value;
+    }
+
+    const product = Lab.findElementByValueMatch(value).create();
+    product.value = value;
+
+    if (arguments.length > 1) {
+        if (PropertyDefinition.isPrototypeOf(value)) {
+            product.name = value.name;
+        } else {
+            product.name = name;
+        }
+    }
+
+    return product;
+};
+scanValue.branch(
+    ObjectElement.asMatcher(),
+    function() {
+        const value = this.value;
+        Object.getOwnPropertyNames(value).forEach(function(name) {
+            const descriptor = Object.getOwnPropertyDescriptor(value, name);
+            const definition = PropertyDefinition.create(name, descriptor);
+            const property = scanProduct(definition, name);
+            this.appendChild(property);
+            property.scanValue();
+        }, this);
+    }
+);
+scanValue.branch(
+    PropertyElement.asMatcher(),
+    function() {
+        const value = this.value;
+        const descriptor = value.descriptor;
+        Object.keys(descriptor).forEach(function(key) {
+            const descriptorPropertyValue = descriptor[key];
+            const descriptorProperty = scanProduct(descriptorPropertyValue, key);
+            this.appendChild(descriptorProperty);
+            descriptorProperty.scanValue();
+        }, this);
+    }
+);
+
+function cloneFunction(fn) {
+    // a true clone must handle new  https://gist.github.com/dmail/6e639ac50cec8074a346c9e10e76fa65
+    return function() {
+        return fn.apply(this, arguments);
+    };
+}
+
 // include child
 (function() {
     Element.refine({
         includeChild() {
+            // cela veut dire : une primitive ne peut pas avoir d'enfant
             return this.primitiveMark !== true;
         }
     });
@@ -176,21 +199,25 @@ function cloneFunction(fn) {
         includeChild(child) {
             if (this.isData()) {
                 // data property ignores getter & setter
-                return (
+                let include = (
                     child.name === 'configurable' ||
                     child.name === 'enumerable' ||
                     child.name === 'writable' ||
                     child.name === 'value'
                 );
+                // console.log('data property include', include);
+                return include;
             }
             if (this.isAccessor()) {
                 // accessor property ignores writable & values
-                return (
+                let include = (
                     child.name === 'configurable' ||
                     child.name === 'enumerable' ||
                     child.name === 'get' ||
                     child.name === 'set'
                 );
+                // console.log('accessor property include', include);
+                return include;
             }
             return true;
         }
@@ -206,6 +233,9 @@ function cloneFunction(fn) {
         }
     });
 })();
+
+const variation = polymorph();
+const conflictsWith = polymorph();
 
 const combineChildren = (function() {
     const debug = true;
@@ -232,7 +262,7 @@ const combineChildren = (function() {
             secondSourceElement,
             destinationElement
         );
-        // 2 : met les enfants dont le conflit concerne  first ou second avec existing et récupère ce qui reste
+        // 2 : met les enfants dont le conflit concerne first ou second avec existing et récupère ce qui reste
         const remainingFirstSourceChildren = collideChildren(
             filteredFirstSourceChildren,
             destinationElement
@@ -409,82 +439,6 @@ Element.hooks.removed = function() {
     this.variation('removed');
 };
 
-const scanValue = polymorph();
-const ScanTransformation = Transformation.extend({
-    parentNodeIndex: 2,
-
-    make(value) {
-        return Lab.findElementByValueMatch(value).create();
-    },
-
-    transform(product, value, name) {
-        product.name = name;
-        product.valueModel = value; // we need to remind valueModel if we want cyclic structure support
-        product.value = product.scanValue(value);
-        return product;
-    },
-
-    fill(product, value) {
-        // il n'y a pas de conflit ni de propriété existante pour un scan
-        if (ObjectElement.isPrototypeOf(product)) {
-            Object.getOwnPropertyNames(value).forEach(function(name) {
-                const descriptor = Object.getOwnPropertyDescriptor(value, name);
-                const definition = PropertyDefinition.create(name, descriptor);
-                this.createConstructor(definition, name, product).produce();
-            }, this);
-        } else if (PropertyElement.isPrototypeOf(product)) {
-            const descriptor = value.descriptor;
-            Object.keys(descriptor).forEach(function(key) {
-                this.createConstructor(descriptor[key], key, product).produce();
-            }, this);
-        }
-    }
-});
-const scan = function(...args) {
-    return ScanTransformation.create(...args).produce();
-};
-const scanProduct = function(value, name) {
-    const element = ScanTransformation.make(value);
-    ScanTransformation.transform(element, value, name);
-    return element;
-};
-
-scanValue.branch(
-    function() {
-        return this.primitiveMark;
-    },
-    function(value) {
-        return value;
-    }
-);
-scanValue.branch(
-    ObjectElement.asMatcherStrict(),
-    function() {
-        return {};
-    }
-);
-scanValue.branch(
-    ArrayElement.asMatcher(),
-    function() {
-        return [];
-    }
-);
-scanValue.branch(
-    ObjectElement.asMatcher(),
-    function(value) {
-        return new value.constructor(value.valueOf()); // eslint-disable-line new-cap
-    }
-);
-scanValue.branch(
-    PropertyElement.asMatcher(),
-    function() {
-
-    }
-);
-
-const variation = polymorph();
-const conflictsWith = polymorph();
-
 const touchValue = polymorph();
 const TouchTransformation = Transformation.extend({
     parentNodeIndex: 1,
@@ -494,12 +448,11 @@ const TouchTransformation = Transformation.extend({
     },
 
     transform(touchedValue, elementModel) {
-        const product = scanProduct(touchedValue, elementModel.name);
-        return product;
+        return scanProduct(touchedValue, elementModel.name);
     },
 
-    fill(product, elementModel, parentNode) {
-        ScanTransformation.fill.call(this, product, product.valueModel, elementModel.name, parentNode);
+    fill(product, elementModel) {
+        product.scanValue();
         const remainingChildren = combineChildren(elementModel, product);
         for (let child of remainingChildren) {
             child.touch(product).produce();
@@ -523,20 +476,14 @@ const CombineTransformation = Transformation.extend({
         // je rapelle qu'idéalement une valeur ne DOIT pas savoir de qu'elle propriété elle provient
         // les objet propriétés ne sont donc pas des éléments comme les autres
         // ils forments le lien entre deux valeurs mais ne sont pas des valeur
-        let product;
-        if (PropertyDefinition.isPrototypeOf(combinedValue)) {
-            product = scanProduct(combinedValue, combinedValue.name);
-        } else {
-            product = scanProduct(combinedValue, firstElement.name);
-        }
-
+        let product = scanProduct(combinedValue, firstElement.name);
         product.firstComponent = firstElement;
         product.secondComponent = secondElement;
         return product;
     },
 
     fill(product, firstElement, secondElement) {
-        ScanTransformation.fill.call(this, product, product.valueModel);
+        product.scanValue();
 
         const remainingChildren = combineChildren(firstElement, secondElement, product);
         for (let child of remainingChildren) {
@@ -553,11 +500,13 @@ const InstantiateTransformation = Transformation.extend({
         return elementModel.instantiateValue(parentNode);
     },
 
-    transform(instantiedValue) {
-        return scan(instantiedValue);
+    transform(instantiedValue, elementModel) {
+        return scanProduct(instantiedValue, elementModel.name);
     },
 
     fill(product, elementModel) {
+        product.scanValue();
+
         const remainingChildren = combineChildren(elementModel, product);
         for (let child of remainingChildren) {
             child.instantiate(product).produce();
@@ -656,7 +605,7 @@ touchValue.branch(
 touchValue.branch(
     PropertyElement.asMatcher(),
     function() {
-        return PropertyDefinition.create(this.name);
+        return PropertyDefinition.create(this.value.name);
     }
 );
 // this case happens with array length property
@@ -693,7 +642,7 @@ combineValue.branch(
         return otherElement.touchValue(parentNode);
     }
 );
-// property use otherProperty touched value (inherits name)
+// property use otherProperty touched value (inherits name) (must no inherits descriptor however)
 combineValue.branch(
     function(otherElement) {
         return (
@@ -746,6 +695,7 @@ instantiateValue.branch(
 instantiateValue.branch(
     ObjectElement.asMatcher(),
     function() {
+        // console.log('Object.create at', this.path);
         return Object.create(this.value);
     }
 );
@@ -759,12 +709,14 @@ instantiateValue.branch(
         );
     },
     function() {
+        // console.log('delegate', this.path);
         throw CancelTransformation;
     }
 );
 instantiateValue.branch(
     PropertyElement.asMatcher(),
     function(parentNode) {
+        // console.log('instantiate property at', this.path);
         return this.touchValue(parentNode);
     }
 );
@@ -946,5 +898,11 @@ const transformProperties = {
 };
 
 Element.refine(transformProperties);
+
+const scan = function(value) {
+    const product = scanProduct(value);
+    product.scanValue();
+    return product;
+};
 
 export {scan};
