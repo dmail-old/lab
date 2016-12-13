@@ -97,19 +97,18 @@ export const test = {
     modules: ['@node/assert'],
 
     main(assert) {
-        // function assertPrototype(instance, prototype) {
-        //     assert(Object.getPrototypeOf(instance) === prototype);
-        // }
-
-        this.add('core', function() {
+        this.add('scan', function() {
             this.add('scanning object', function() {
                 const object = {name: 'foo'};
                 const scanned = scan(object);
 
                 assert.deepEqual(scanned.value, object);
-                assert(scanned.value !== object);
+                // scan ne recréera pas l'objet mais doit réfléter son statut
+                // assert(scanned.value !== object);
             });
+        });
 
+        this.add('compose', function() {
             this.add('compose object', function() {
                 const dam = {name: 'dam', item: {name: 'sword'}};
                 const seb = {name: 'seb', item: {price: 10}, age: 10};
@@ -128,53 +127,64 @@ export const test = {
                 assert.deepEqual(dam, {name: 'dam', item: {name: 'sword'}}, 'compose does not mutate ingredients');
             });
 
-            // this.add('compose wo arg must create a new object', function() {
-            //     const object = {
-            //         item: {}
-            //     };
-            //     const element = compose(object);
-            //     assert(element.value !== object);
-            //     assert(element.value.item !== object.item);
+            /*
+            this.add('compose without argument', function() {
+                const object = {
+                    item: {}
+                };
+                const element = compose(object);
+                assert(element.value !== object);
+                assert(element.value.item !== object.item);
 
-            //     const composite = element.compose();
-            //     assert(composite.value !== element.value);
-            //     assert(composite.value.item !== element.value.item);
-            // });
+                const composite = element.compose();
+                assert(composite.value !== element.value);
+                assert(composite.value.item !== element.value.item);
+            });
 
-            // this.add('primitive overrides composite property value', function() {
-            //     const object = {
-            //         name: {}
-            //     };
-            //     const composite = compose(object).compose({
-            //         name: true
-            //     });
-            //     assert(composite.value.name === true);
-            // });
+            this.add('compose object + primitive property', function() {
+                const object = {
+                    name: {}
+                };
+                const composite = compose(object).compose({
+                    name: true
+                });
+                assert(composite.value.name === true);
+            });
 
-            // this.add('composite overrides primitive', function() {
-            //     const object = {
-            //         name: true
-            //     };
-            //     const composite = compose(object).compose({
-            //         name: {}
-            //     });
-            //     assert(typeof composite.value.name === 'object');
-            // });
-
-            // this.add('construct must create new objects', function() {
-            //     const object = {
-            //         foo: true,
-            //         item: {},
-            //         values: [{}]
-            //     };
-            //     const composite = scan(object);
-            //     const instance = composite.construct();
-            //     assertPrototype(instance, object);
-            //     assertPrototype(instance.item, object.item);
-            //     assertPrototype(instance.values[0], object.values[0]);
-            //     assert(instance.hasOwnProperty('foo') === false);
-            // });
+            this.add('composite primitive + object property', function() {
+                const object = {
+                    name: true
+                };
+                const composite = compose(object).compose({
+                    name: {}
+                });
+                assert(typeof composite.value.name === 'object');
+            });
+            */
         });
+
+        /*
+        this.add('construct', function() {
+            function assertPrototype(instance, prototype) {
+                assert(Object.getPrototypeOf(instance) === prototype);
+            }
+
+            this.add('construct must create new objects', function() {
+                const object = {
+                    foo: true,
+                    item: {},
+                    values: [{}]
+                };
+                const composite = scan(object);
+                const model = composite.value;
+                const instance = composite.construct();
+                assertPrototype(instance, model);
+                assertPrototype(instance.item, model.item);
+                assertPrototype(instance.values[0], model.values[0]);
+                assert(instance.hasOwnProperty('foo') === false);
+            });
+        });
+        */
 
         this.add('array', function() {
             // this.add('array concatenation', function() {
