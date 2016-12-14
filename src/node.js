@@ -17,10 +17,6 @@ const Node = util.extend({
         }
     },
 
-    fill() {
-
-    },
-
     createNode(...args) {
         return this.createConstructor(...args);
     },
@@ -53,7 +49,10 @@ const Node = util.extend({
     },
 
     hook(name, ...args) {
-        this.hooks[name].call(this, ...args);
+        const hooks = this.hooks;
+        if (name in hooks) {
+            hooks[name].call(this, ...args);
+        }
     },
 
     remove() {
@@ -121,5 +120,32 @@ Node.refine({
         return Fragment.create();
     }
 });
+
+Node.refine({
+    createAncestorIterable() {
+        let constituent = this;
+
+        return createIterable(function() {
+            let parentNode = constituent.parentNode;
+            constituent = parentNode;
+
+            const result = {
+                done: !parentNode,
+                value: parentNode
+            };
+
+            return result;
+        });
+    }
+});
+
+function createIterable(nextMethod) {
+    return {
+        [Symbol.iterator]: function() {
+            return this;
+        },
+        next: nextMethod
+    };
+}
 
 export default Node;

@@ -1,13 +1,69 @@
-import {scan, Infection} from './lib/lab.js';
-import './lib/primitive.js';
-import {ObjectElement} from './lib/composite.js';
+/*
+raf
 
-const baseElement = ObjectElement.create();
-// baseElement reaction let the secondObject prevails
-baseElement.createComposite = function(firstObject, secondObject) {
-    return secondObject.procreate();
-};
-const compose = baseElement.compose.bind(baseElement);
+- que tous les anciens tests passent avec polymorph
+- modifier la doc concernant l'infection, il n'y aura pas d'infection juste un moyen de créer un custom composer
+avec des options pour modifier le comportement existant
+import {compose, composer} from '@dmail/lab';
+
+compose; // c'est le composer par défaut pas besoin de faire compose = composer()
+composer; // permet de créer une fonction compose custom qui se comporte d'une manière différente de celle par défaut
+myCompose = composer({constructBindMethod: true, bindUsing: 'native'});
+
+- en complément de cette manière de créer un custom composer y'aura un moyen d'jaouter du comportement custom
+qui peut aussi se brancher sur les options passé lorsque l'on crée le custom composer
+je ne sais pas encore quelle forme cette api là va prendre
+
+ptet kk chose comme
+import {composition} from '@dmail/lab';
+
+composition.construct.branch(); // et hop on ajoute un cas custom
+// il manque juste le moyen de dire cette branche s'active selon telle ou telle option
+
+- une fois qu'on a tout ça on pousuis l'implémentation des examples
+*/
+
+import {Element} from './src/lab.js';
+import {scan} from './src/transform.js';
+
+Element.refine({
+    asElement() {
+        // pointerNode will return the pointedElement
+        // doing ctrl+c & ctrl+v on a symlink on windows copy the symlinked file and not the symlink
+        return this;
+    }
+});
+
+Element.refine({
+    compose() {
+        let composite;
+        if (arguments.length === 0) {
+            let transformation = this.touch();
+            let product = transformation.produce();
+            composite = product;
+        } else {
+            let i = 0;
+            let j = arguments.length;
+            composite = this;
+            for (;i < j; i++) {
+                const arg = arguments[i];
+                let element;
+                if (Element.isPrototypeOf(arg)) {
+                    element = arg;
+                } else {
+                    element = scan(arg);
+                }
+                let transformation = composite.combine(element);
+                let product = transformation.produce();
+                composite = product;
+            }
+        }
+
+        return composite;
+    }
+});
+const pureElement = Element.create();
+const compose = pureElement.compose.bind(pureElement);
 
 export {compose};
 
@@ -41,21 +97,19 @@ export const test = {
     modules: ['@node/assert'],
 
     main(assert) {
-        function assertPrototype(instance, prototype) {
-            assert(Object.getPrototypeOf(instance) === prototype);
-        }
-
-        this.add('core', function() {
-            this.add('scan is mutable, compose is immutable', function() {
-                const object = {};
+        this.add('scan', function() {
+            this.add('scanning object', function() {
+                const object = {name: 'foo'};
                 const scanned = scan(object);
-                const composed = compose(object);
 
-                assert(scanned.value === object);
-                assert(composed.value !== object);
+                assert.deepEqual(scanned.value, object);
+                // scan ne recréera pas l'objet mais doit réfléter son statut
+                // assert(scanned.value !== object);
             });
+        });
 
-            this.add('object composition', function() {
+        this.add('compose', function() {
+            this.add('compose object', function() {
                 const dam = {name: 'dam', item: {name: 'sword'}};
                 const seb = {name: 'seb', item: {price: 10}, age: 10};
                 const expectedComposite = {name: 'seb', item: {name: 'sword', price: 10}, age: 10};
@@ -64,17 +118,16 @@ export const test = {
                 const sebElement = scan(seb);
                 const damValue = damElement.value;
                 const sebValue = sebElement.value;
-                assert(damValue === dam);
-                assert(sebValue === seb);
-                assert(damElement.getProperty('name').descriptor.writable === true);
+                assert.deepEqual(damValue, dam);
+                assert.deepEqual(sebValue, seb);
 
                 const compositeElement = damElement.compose(sebElement);
                 const compositeValue = compositeElement.value;
                 assert.deepEqual(compositeValue, expectedComposite);
-                assert.deepEqual(dam, {name: 'dam', item: {name: 'sword'}});
+                assert.deepEqual(dam, {name: 'dam', item: {name: 'sword'}}, 'compose does not mutate ingredients');
             });
 
-            this.add('compose wo arg must create a new object', function() {
+            this.add('compose without argument', function() {
                 const object = {
                     item: {}
                 };
@@ -87,38 +140,7 @@ export const test = {
                 assert(composite.value.item !== element.value.item);
             });
 
-            this.add('infection', function() {
-                const object = {
-                    item: {}
-                };
-                const composite = scan(object);
-                const infection = Infection.create({
-                    foo: true
-                });
-                infection.carriageable = true;
-                composite.infect(infection);
-
-                const infectedComposite = composite.compose();
-                assert(infectedComposite.foo);
-                const infectedItemProperty = infectedComposite.getProperty('item');
-                assert(infectedItemProperty.foo === undefined); // because property is an healthy carrier of the infection
-                const infectedItemComposite = infectedItemProperty.valueNode;
-                assert(infectedItemComposite.foo);
-            });
-
-            this.add('construct must create new objects', function() {
-                const object = {
-                    item: {},
-                    values: [{}]
-                };
-                const composite = scan(object);
-                const instance = composite.construct();
-                assertPrototype(instance, object);
-                assertPrototype(instance.item, object.item);
-                assertPrototype(instance.values[0], object.values[0]);
-            });
-
-            this.add('primitive overrides composite property value', function() {
+            this.add('compose object + primitive property', function() {
                 const object = {
                     name: {}
                 };
@@ -128,7 +150,7 @@ export const test = {
                 assert(composite.value.name === true);
             });
 
-            this.add('composite overrides primitive', function() {
+            this.add('composite primitive + object property', function() {
                 const object = {
                     name: true
                 };
@@ -136,6 +158,27 @@ export const test = {
                     name: {}
                 });
                 assert(typeof composite.value.name === 'object');
+            });
+        });
+
+        this.add('construct', function() {
+            function assertPrototype(instance, prototype) {
+                assert(Object.getPrototypeOf(instance) === prototype);
+            }
+
+            this.add('construct must create new objects', function() {
+                const object = {
+                    foo: true,
+                    item: {},
+                    values: [{}]
+                };
+                const composite = scan(object);
+                const model = composite.value;
+                const instance = composite.construct();
+                assertPrototype(instance, model);
+                assertPrototype(instance.item, model.item);
+                assertPrototype(instance.values[0], model.values[0]);
+                assert(instance.hasOwnProperty('foo') === false);
             });
         });
 
@@ -152,16 +195,21 @@ export const test = {
                 const damFriendsElement = scan(damFriends);
                 const sandraFriendsElement = scan(sandraFriends);
                 const compositeFriendsElement = damFriendsElement.compose(sandraFriendsElement);
+                const actualComposite = compositeFriendsElement.value;
 
-                assert.deepEqual(compositeFriendsElement.value, expectedComposite);
+                assert.deepEqual(actualComposite, expectedComposite);
+                assert(actualComposite instanceof Array);
             });
 
             this.add('scan + compose array', function() {
                 const array = [0, 1];
                 const arrayElement = scan(array);
                 const composedArray = arrayElement.compose();
+                const composite = composedArray.value;
+
                 assert(arrayElement.value === array);
                 assert.deepEqual(composedArray.value, array);
+                assert(composite instanceof Array);
             });
 
             this.add('compose array', function() {
@@ -192,6 +240,39 @@ export const test = {
                 const secondArray = [2, 3];
                 const composedArray = compose(firstArray).compose(secondArray);
                 assert(composedArray.value.length === 3);
+            });
+        });
+
+        this.add('arraylike', function() {
+            this.add('by object + array', function() {
+                const object = {foo: true, 1: 'b'};
+                const array = [];
+                const element = compose(object, array);
+                const arrayLike = element.value;
+
+                assert(arrayLike.length === 1);
+                assert(arrayLike instanceof Array === false);
+                assert(element.getProperty('length').data.value === arrayLike.length, 'length is in sync');
+            });
+
+            this.add('by object + arraylike', function() {
+                const object = {foo: true, 0: 1};
+                const arraylike = {1: 0, length: 1};
+                const element = compose(object, arraylike);
+                const composite = element.value;
+
+                assert(composite.length === 2);
+                assert(composite instanceof Array === false);
+                assert(element.getCountTrackerProperty().data.value === composite.length);
+            });
+
+            this.add('by arraylike', function() {
+                const object = {0: 1, length: 1};
+                const element = scan(object).compose();
+                const composite = element.value;
+
+                assert(composite.length === 1);
+                assert(element.getCountTrackerProperty().data.value === composite.length);
             });
         });
 
