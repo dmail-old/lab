@@ -158,6 +158,12 @@ const Behaviour = util.extend({
         return this;
     },
 
+    preferBranch(...args) {
+        const branch = this.branch(...args);
+        this.prefer(branch);
+        return branch;
+    },
+
     with(...instructions) {
         return this.createConstructor(this.instructions.push(...instructions));
     },

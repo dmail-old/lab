@@ -63,7 +63,7 @@ const PropertyElement = Element.extend('Property', {
 
     install(element) {
         const descriptor = this.createDescriptor();
-        console.log('set', this.name, '=', descriptor, 'on', element.value);
+        // console.log('set', this.name, '=', descriptor, 'on', element.value);
         Object.defineProperty(element.value, this.name, descriptor);
     },
 

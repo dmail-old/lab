@@ -97,7 +97,6 @@ export const test = {
     modules: ['@node/assert'],
 
     main(assert) {
-        /*
         this.add('scan', function() {
             this.add('scanning object', function() {
                 const object = {name: 'foo'};
@@ -182,7 +181,6 @@ export const test = {
                 assert(instance.hasOwnProperty('foo') === false);
             });
         });
-        */
 
         this.add('array', function() {
             this.add('array concatenation', function() {
@@ -197,66 +195,101 @@ export const test = {
                 const damFriendsElement = scan(damFriends);
                 const sandraFriendsElement = scan(sandraFriends);
                 const compositeFriendsElement = damFriendsElement.compose(sandraFriendsElement);
+                const actualComposite = compositeFriendsElement.value;
 
-                assert.deepEqual(compositeFriendsElement.value, expectedComposite);
-                // inutile ici puisqu'on fonctionne avec des tableaux mais les arraylike devront vérifier ça
-                // parce que la length ne seras pas magiquement la bonne sur l'objet final
-                // assert(compositeFriendsElement.getProperty('length').data.value === expectedComposite.length);
+                assert.deepEqual(actualComposite, expectedComposite);
+                assert(actualComposite instanceof Array);
             });
 
-            // this.add('scan + compose array', function() {
-            //     const array = [0, 1];
-            //     const arrayElement = scan(array);
-            //     const composedArray = arrayElement.compose();
-            //     assert(arrayElement.value === array);
-            //     assert.deepEqual(composedArray.value, array);
-            // });
+            this.add('scan + compose array', function() {
+                const array = [0, 1];
+                const arrayElement = scan(array);
+                const composedArray = arrayElement.compose();
+                const composite = composedArray.value;
 
-            // this.add('compose array', function() {
-            //     const array = [0, 1];
-            //     const arrayElement = compose(array);
+                assert(arrayElement.value === array);
+                assert.deepEqual(composedArray.value, array);
+                assert(composite instanceof Array);
+            });
 
-            //     assert.deepEqual(arrayElement.value, array);
-            //     assert(arrayElement.value instanceof Array);
-            //     assert(arrayElement.hasProperty('length'));
-            // });
+            this.add('compose array', function() {
+                const array = [0, 1];
+                const arrayElement = compose(array);
 
-            // this.add('compose array in property', function() {
-            //     const obj = {
-            //         list: ['a', 'b']
-            //     };
-            //     const element = compose(obj);
-            //     const composed = element.value;
+                assert.deepEqual(arrayElement.value, array);
+                assert(arrayElement.value instanceof Array);
+                assert(arrayElement.hasProperty('length'));
+            });
 
-            //     // because we composed object with an other the obj was "cloned"
-            //     // if we used scan it would be different but as we can see the clone
-            //     assert(composed !== obj);
-            //     assert(composed.list !== obj.list);
-            //     assert(element.value.list instanceof Array);
-            // });
+            this.add('compose array in property', function() {
+                const obj = {
+                    list: ['a', 'b']
+                };
+                const element = compose(obj);
+                const composed = element.value;
 
-            // this.add('compose two array', function() {
-            //     const firstArray = [1];
-            //     const secondArray = [2, 3];
-            //     const composedArray = compose(firstArray).compose(secondArray);
-            //     assert(composedArray.value.length === 3);
-            // });
+                // because we composed object with an other the obj was "cloned"
+                // if we used scan it would be different but as we can see the clone
+                assert(composed !== obj);
+                assert(composed.list !== obj.list);
+                assert(element.value.list instanceof Array);
+            });
+
+            this.add('compose two array', function() {
+                const firstArray = [1];
+                const secondArray = [2, 3];
+                const composedArray = compose(firstArray).compose(secondArray);
+                assert(composedArray.value.length === 3);
+            });
         });
 
-        // this.add('function', function() {
-        //     this.add('function scan', function() {
-        //         const fn = function() {};
-        //         const element = scan(fn);
-        //         element.compose();
-        //     });
+        this.add('arraylike', function() {
+            this.add('by object + array', function() {
+                const object = {foo: true, 1: 'b'};
+                const array = [];
+                const element = compose(object, array);
+                const arrayLike = element.value;
 
-        //     this.add('function in properties', function() {
-        //         const obj = {
-        //             fn() {}
-        //         };
-        //         const element = scan(obj);
-        //         element.compose();
-        //     });
-        // });
+                assert(arrayLike.length === 1);
+                assert(arrayLike instanceof Array === false);
+                assert(element.getProperty('length').data.value === arrayLike.length, 'length is in sync');
+            });
+
+            this.add('by object + arraylike', function() {
+                const object = {foo: true, 0: 1};
+                const arraylike = {1: 0, length: 1};
+                const element = compose(object, arraylike);
+                const composite = element.value;
+
+                assert(composite.length === 2);
+                assert(composite instanceof Array === false);
+                assert(element.getCountTrackerProperty().data.value === composite.length);
+            });
+
+            this.add('by arraylike', function() {
+                const object = {0: 1, length: 1};
+                const element = scan(object).compose();
+                const composite = element.value;
+
+                assert(composite.length === 1);
+                assert(element.getCountTrackerProperty().data.value === composite.length);
+            });
+        });
+
+        this.add('function', function() {
+            this.add('function scan', function() {
+                const fn = function() {};
+                const element = scan(fn);
+                element.compose();
+            });
+
+            this.add('function in properties', function() {
+                const obj = {
+                    fn() {}
+                };
+                const element = scan(obj);
+                element.compose();
+            });
+        });
     }
 };

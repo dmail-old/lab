@@ -142,17 +142,20 @@ const scanProduct = function(value, name) {
 
     return product;
 };
+function scanProperties(propertyNames, element) {
+    const value = element.value;
+    for (let name of propertyNames) {
+        const descriptor = Object.getOwnPropertyDescriptor(value, name);
+        const definition = PropertyDefinition.create(name, descriptor);
+        const property = scanProduct(definition, name);
+        element.appendChild(property);
+        property.scanValue();
+    }
+}
 scanValue.branch(
     ObjectElement.asMatcher(),
     function() {
-        const value = this.value;
-        Object.getOwnPropertyNames(value).forEach(function(name) {
-            const descriptor = Object.getOwnPropertyDescriptor(value, name);
-            const definition = PropertyDefinition.create(name, descriptor);
-            const property = scanProduct(definition, name);
-            this.appendChild(property);
-            property.scanValue();
-        }, this);
+        scanProperties(Object.getOwnPropertyNames(this.value), this);
     }
 );
 scanValue.branch(
@@ -166,6 +169,29 @@ scanValue.branch(
             this.appendChild(descriptorProperty);
             descriptorProperty.scanValue();
         }, this);
+    }
+);
+// disable function.prototype.constructor property discoverability to prevent infinite recursion
+// it's because prototype is a cyclic structure due to circular reference between prototype/constructor
+scanValue.preferBranch(
+    function() {
+        const parentNode = this.parentNode;
+        const ancestor = parentNode ? parentNode.parentNode : null;
+
+        return (
+            ObjectElement.isPrototypeOf(this) &&
+            parentNode &&
+            PropertyElement.isPrototypeOf(parentNode) &&
+            parentNode.name === 'prototype' &&
+            ancestor &&
+            FunctionElement.isPrototypeOf(ancestor)
+        );
+    },
+    function() {
+        // when scanning a function prototype object omit the constructor property to prevent infinit recursion
+        scanProperties(Object.getOwnPropertyNames(this.value).filter(function(name) {
+            return name !== 'constructor';
+        }), this);
     }
 );
 
@@ -211,23 +237,13 @@ function cloneFunction(fn) {
             return true;
         }
     });
-    // disable function.prototype property disocverability to prevent infinite recursion
-    // it's because prototype is a cyclic structure due to circular reference between prototype/constructor
-    // we could delay the function.prototype.constructor discoverability to be more accurate
-    // includeChild would be different then, it would occur on ObjectElement when
-    // the child is named constructor and that parent is a function
-    FunctionElement.refine({
-        includeChild(child) {
-            return child.name !== 'prototype';
-        }
-    });
 })();
 
 const variation = polymorph();
 const conflictsWith = polymorph();
 
 const combineChildren = (function() {
-    const debug = true;
+    const debug = !true;
 
     function combineChildrenOneSource(sourceElement, destinationElement) {
         const filteredSourceElementChildren = filterChildren(sourceElement, destinationElement);
@@ -755,6 +771,7 @@ instantiateValue.branch(
 
 /* ---------------- countTracker ---------------- */
 (function() {
+    const debug = false;
     const STRING = 0; // name is a string it cannot be an array index
     const INFINITE = 1; // name is casted to Infinity, NaN or -Infinity, it cannot be an array index
     const FLOATING = 2; // name is casted to a floating number, it cannot be an array index
@@ -859,14 +876,14 @@ instantiateValue.branch(
             const countTracker = countTrackerProperty.data;
 
             if (type === 'added') {
-                // problème ici : ce mutate ne vas pas entrainer un defineProperty
-                // puisque c'est property.value qui est modifié et pas property
-                // et si dans variation je fait un defineProperty chaque fois qu'un élément de description
-                // de la propriété est modifié chuis mal
-                // par contre comme ici il s'agit d'un replace
-                // je peux potentiellement le savoir et donc ne régir qu'en cas de replace
+                if (debug) {
+                    console.log('increment count tracker value');
+                }
                 countTracker.mutate(countTracker.value + 1);
             } else if (type === 'removed') {
+                if (debug) {
+                    console.log('decrement count tracker value');
+                }
                 countTracker.mutate(countTracker.value - 1);
             }
         }
@@ -874,38 +891,67 @@ instantiateValue.branch(
 
     // length count tracker must be in sync with current amount of indexed properties
     // doit se produire pour touch, combine et instantiate mais pas scan
-    [touchValue, combineValue, instantiateValue].forEach(function(method) {
-        const ensureCountTrackerSync = method.branch(
-            function() {
-                const parentNode = arguments[arguments.length === 1 ? 0 : 1];
+    // il faut couvrir tous ces cas
+    // arraylike -> {length: 0}.compose() or instantiate()
+    // array -> [].compose() or instantiate()
+    // arraylike + object -> {length: 0}.compose({})
+    // arraylike + arraylike -> {length: 0}.compose({length: 1})
+    // arraylike + array -> {length: 1}.compose([])
+    // array + array -> [].compose([])
+    // array + arraylike -> [].compose({length: 1})
+    // array + object -> [].compose({})
 
-                return (
-                    this.isCountTrackerValue() &&
-                    parentNode.isCountTrackerProperty() &&
-                    parentNode.data === this
-                );
+    function elementIsCountTrackerValue(element, destinationParentNode) {
+        const parentNode = element.parentNode;
+        const destinationAncestor = destinationParentNode ? destinationParentNode.parentNode : null;
+
+        return (
+            element.isCountTrackerValue() &&
+            parentNode &&
+            parentNode.isCountTrackerProperty() &&
+            parentNode.data === element &&
+            destinationParentNode &&
+            destinationAncestor &&
+            ObjectElement.isPrototypeOf(destinationAncestor)
+        );
+    }
+
+    function getIndexedPropertyCount(element) {
+        const indexedPropertyCount = element.children.reduce(function(previous, current) {
+            if (current.isIndexedProperty()) {
+                previous++;
+            }
+            return previous;
+        }, 0);
+        if (debug) {
+            console.log('override combined count tracker to', indexedPropertyCount);
+        }
+        return indexedPropertyCount;
+    }
+
+    [touchValue, instantiateValue].forEach(function(method) {
+        method.preferBranch(
+            function(destinationParentNode) {
+                return elementIsCountTrackerValue(this, destinationParentNode);
             },
-            function() {
-                // for touchValue & instantiateValue parentNode is the first argument
-                // but for combineValue its the second
-                const parentNode = arguments[arguments.length === 1 ? 0 : 1];
-                const ancestorObject = parentNode.parentNode;
-
-                return ancestorObject.children.reduce(function(previous, current) {
-                    if (current.isIndexedProperty()) {
-                        previous++;
-                    }
-                    return previous;
-                }, 0);
+            function(destinationParentNode) {
+                return getIndexedPropertyCount(destinationParentNode.parentNode);
             }
         );
-        method.prefer(ensureCountTrackerSync);
     });
+    combineValue.preferBranch(
+        function(otherElement, destinationParentNode) {
+            return elementIsCountTrackerValue(this, destinationParentNode);
+        },
+        function(otherElement, destinationParentNode) {
+            return getIndexedPropertyCount(destinationParentNode.parentNode);
+        }
+    );
 
     // this case exists because array length property is not configurable
     // because of that we cannot redefine it when composing array with arraylike
     // so when there is a already a length property assume it's in sync
-    const preventArrayLengthCombine = combineValue.branch(
+    combineValue.preferBranch(
         function() {
             return (
                 this.name === 'length' &&
@@ -915,16 +961,17 @@ instantiateValue.branch(
             );
         },
         function() {
-            console.log('cancel current array length transformation');
+            if (debug) {
+                console.log('cancel current array length transformation');
+            }
             throw CancelTransformation;
         }
     );
-    combineValue.prefer(preventArrayLengthCombine);
 })();
 
 /* ---------------- array concatenation ---------------- */
 (function() {
-    const debug = true;
+    const debug = !true;
     const ignoreConcatenedPropertyConflict = conflictsWith.branch(
         function(otherProperty) {
             return (
