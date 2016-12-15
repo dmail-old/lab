@@ -815,7 +815,10 @@ conflictsWith.branch(null, function() {
 touchValue.branch(
     ObjectElement.asMatcherStrict(),
     function() {
-        return {};
+        const value = this.value;
+        const prototype = Object.getPrototypeOf(value);
+        // handle case where object are not directly linked to Object.prototype
+        return Object.create(prototype);
     }
 );
 // Array
@@ -834,7 +837,12 @@ touchValue.branch(
 );
 // Boolean, Number, String, RegExp, Date, Error
 touchValue.branch(
-    ObjectElement.asMatcher(),
+    function() {
+        return (
+            ObjectElement.isPrototypeOf(this) &&
+            this.hasOwnProperty('valueConstructor')
+        );
+    },
     function() {
         return new this.valueConstructor(this.value.valueOf()); // eslint-disable-line new-cap
     }
@@ -969,6 +977,15 @@ instantiateValue.branch(
     PropertyElement.asMatcher(),
     function(parentNode) {
         // console.log('instantiate property at', this.path);
+        return this.touchValue(parentNode);
+    }
+);
+// all non delegated stuff must be instantiated
+instantiateValue.branch(
+    function() {
+        return true;
+    },
+    function(parentNode) {
         return this.touchValue(parentNode);
     }
 );
@@ -1255,7 +1272,18 @@ const transformProperties = {
     instantiateValue,
     instantiate,
     construct() {
-        return this.instantiate().produce().value;
+        const instantiatedComposite = this.instantiate().produce();
+        const instantiatedValue = instantiatedComposite.value;
+
+        if (ObjectElement.isPrototypeOf(this)) {
+            const constructorProperty = this.getProperty('constructor');
+
+            if (constructorProperty) {
+                constructorProperty.data.value.apply(instantiatedValue, arguments);
+            }
+        }
+
+        return instantiatedValue;
     }
 };
 
