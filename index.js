@@ -1,30 +1,58 @@
 /*
 raf
 
-- que tous les anciens tests passent avec polymorph
-- modifier la doc concernant l'infection, il n'y aura pas d'infection juste un moyen de créer un custom composer
-avec des options pour modifier le comportement existant
-import {compose, composer} from '@dmail/lab';
-
-compose; // c'est le composer par défaut pas besoin de faire compose = composer()
-composer; // permet de créer une fonction compose custom qui se comporte d'une manière différente de celle par défaut
-myCompose = composer({constructBindMethod: true, bindUsing: 'native'});
-
-- en complément de cette manière de créer un custom composer y'aura un moyen d'jaouter du comportement custom
-qui peut aussi se brancher sur les options passé lorsque l'on crée le custom composer
-je ne sais pas encore quelle forme cette api là va prendre
-
-ptet kk chose comme
-import {composition} from '@dmail/lab';
-
-composition.construct.branch(); // et hop on ajoute un cas custom
-// il manque juste le moyen de dire cette branche s'active selon telle ou telle option
-
 - une fois qu'on a tout ça on pousuis l'implémentation des examples
+- ça serais bien, pour le plaisir et pour voir si on peut vraiment faire ce qu'on veut avec lab.js
+de faire une composer qui aurait le "même" comportement que stampit juste en utilisant ce qu'on a à disposition
+par "même comportement" j'entends un truc genre
+const model = {
+    constructor() {
+
+    },
+    methods: {
+
+    },
+    properties: {
+
+    },
+    deepProperties: {
+
+    },
+    configuration: {
+
+    },
+    deepConfiguration: {
+
+    },
+    static: {
+
+    },
+    deepStatic: {
+
+    }
+};
+const composite = compose(model);
+
+composite.value se retrouverait alors avec tout ces propriétés set sur lui
+composite.value.methods === model.methods
+par contre quand je fais
+- composite.compose()
+-> constructors sont mis ensemble
+-> methods sont assign sur un nouvel objet
+-> properties sont assign sur un nouvel objet
+-> deepProperties sont merge sur un nouvel objet
+-> configuration sont assign sur un nouvel objet
+-> deepConfiguration sont merge sur un nouvel objet
+-> static sont assign sur un nouvel objet
+-> deepStatic sont merge sur un nouvel objet
+- const instance = compose.construct();
+-> methods sont assign et bound sur instance
+-> properties, deepProperties sont assign sur instance
+-> configuration, deepConfiguration, static, deepStatic sont ignoré
+-> les constructors sont appelé sr instance
 */
 
-import {Element} from './src/lab.js';
-import {scan} from './src/transform.js';
+import {Element, scan} from './src/lab.js';
 
 Element.refine({
     asElement() {

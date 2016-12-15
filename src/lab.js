@@ -2,6 +2,7 @@
 
 // https://github.com/Yomguithereal/baobab
 import util from './util.js';
+import polymorph from './polymorph.js';
 import Node from './node.js';
 
 const Lab = util.extend({
@@ -81,6 +82,8 @@ const Lab = util.extend({
         }
     }
 });
+export {Lab};
+export default Lab;
 
 const Element = Node.extend({
     extend(tagName, ...args) {
@@ -101,477 +104,1167 @@ const Element = Node.extend({
             }
         }
         return '#' + paths.join('.');
-    }
-});
-
-// infection
-
-/*
-Une infection est transmise
-dès lors elle peut te contaminer ->
-
-transmittable
-communicable
-contamine
-infect
-manifest
-cure
-purify
-propagate
-propagation
-*/
-/*
-const debugInfection = !true;
-const debugInfectionTranmission = debugInfection && false;
-const Infection = util.extend({
-    constructor(symptoms) {
-        if (symptoms) {
-            this.symptoms = symptoms;
-        }
-        this.vulnerableOrganisms = [];
-        this.compatibleOrganisms = [];
-    },
-    symptoms: {},
-
-    installSymptoms(organism) {
-        const symptoms = this.symptoms;
-        const treatments = {};
-        Object.keys(symptoms).forEach(function(key) {
-            if (organism.hasOwnProperty(key)) {
-                treatments[key] = organism[key];
-            }
-            organism[key] = symptoms[key];
-        });
-        return treatments;
     },
 
-    cureSymtoms(organism, treatments) {
-        const symptoms = this.symptoms;
-        Object.keys(symptoms).forEach(function(key) {
-            if (treatments.hasOwnProperty(key)) {
-                organism[key] = treatments[key];
-            } else {
-                delete organism[key];
-            }
-        });
+    make() {
+        return this.createConstructor.apply(this, arguments);
     },
 
-    from(arg) {
-        let infection;
-        if (Infection.isPrototypeOf(arg)) {
-            infection = arg;
-        } else {
-            infection = Infection.create(arg);
-        }
-        return infection;
-    },
-
-    canInfect(organismPrototype) {
-        return this.vulnerableOrganisms.some(function(vulnerableOrganism) {
-            return organismPrototype === vulnerableOrganism;
-        });
-    },
-
-    canBeHostedBy(organismPrototype) {
-        // an healthy carrier of the infection (it has the infection without its symptoms)
-        return this.compatibleOrganisms.some(function(compatibleOrganism) {
-            return organismPrototype === compatibleOrganism;
-        });
-    }
-});
-const Health = util.extend({
-    constructor(organism) {
-        this.organism = organism;
-        this.maladies = [];
-    },
-    maladies: [],
-
-    [Symbol.iterator]() {
-        return this.maladies[Symbol.iterator]();
-    },
-
-    createPropagationIterable() {
-        return this.maladies;
-    },
-
-    createOriginIterable() {
-        return this.maladies.reverse().map(function(malady) {
-            return malady.infection;
-        });
-    },
-
-    createMalady(infection) {
-        const malady = {
-            infection: infection,
-            treatments: null,
-            hurting: false,
-            hurt(organism) {
-                if (this.hurting === false) {
-                    this.treatments = this.infection.installSymptoms(organism);
-                    this.hurting = true;
-                }
-            },
-            heal(organism) {
-                if (this.hurting === true) {
-                    this.infection.cureSymtoms(organism, this.treatments);
-                    this.hurting = false;
-                }
-            }
+    asMatcher() {
+        const Prototype = this;
+        return function() {
+            return Prototype.isPrototypeOf(this);
         };
-        return malady;
     },
 
-    infect(infection) {
-        const malady = this.host(infection);
-        malady.hurt(this.organism);
-        return malady;
-    },
-
-    // put infection into the organism
-    host(infection) {
-        // we could check if a malady already use this infection and if so prevent duplicate
-
-        // si l'infection n'a aucune espèce connues sur laquelle est peut se propager
-        // il faudrait créer une infection qui peut alors se propager sur cette espèce
-        if (infection.vulnerableOrganisms.length === 0) {
-            infection.vulnerableOrganisms.push(Object.getPrototypeOf(this.organism));
-        }
-
-        const malady = this.createMalady(infection);
-        this.maladies.push(malady);
-        return malady;
-    },
-
-    // make the infection hurt the organism
-    hurt(infection) {
-        // get the malady corresponding to this element and make it invade the element
-        // infect is a shortcut for adding a malady & infecting it right away
-        const malady = this.maladies.find(function(malady) {
-            return malady.infection === infection;
-        });
-        malady.hurt(this.organism);
-        return malady;
-    },
-
-    cure(infection) {
-        this.heal(infection);
-        this.expel(infection);
-    },
-
-    // heal the infection, keeping it in the organism without hurting it
-    heal(infection) {
-        const maladies = this.maladies;
-        const indexOfMaladyToHeal = maladies.findIndex(function(malady) {
-            return malady.infection === infection;
-        });
-
-        if (indexOfMaladyToHeal === -1) {
-            throw new Error('not infected');
-        }
-        let malady = maladies[indexOfMaladyToHeal];
-        if (malady.hurting) {
-            // healing an infection is bit complex because of supported malady interaction
-            // healing from a malady must also remove thoose interaction
-            // it's why we first heal the organism from all malady after the healed one
-            // and make them rehurt the organism to remove possible malady interaction during hurting of the organism
-            const maladiesLength = maladies.length;
-            let indexOfNextMalady = maladiesLength - 1;
-
-            // as said above, first heal all malady after the healed on
-            const nextHurtingMaladies = [];
-            while (indexOfNextMalady > indexOfMaladyToHeal) {
-                const nextMalady = maladies[indexOfNextMalady];
-                if (nextMalady.hurting) {
-                    nextHurtingMaladies.push(nextMalady);
-                    nextMalady.heal(this.organism);
-                }
-                indexOfNextMalady--;
-            }
-            // heal the desired malady
-            malady.heal(this.organism);
-            // make next malady re-hurt the organism (reverse loop using while -- to preserve order)
-            let hurtingMaladiesCount = nextHurtingMaladies.length;
-            while (hurtingMaladiesCount--) {
-                const hurtingMalady = nextHurtingMaladies[hurtingMaladiesCount];
-                hurtingMalady.hurt(this.organism);
-            }
-        }
-    },
-
-    // remove the infection from this organism
-    expel(infection) {
-        const maladyIndex = this.findIndex(function(malady) {
-            return malady.infection === infection;
-        });
-        this.maladies.splice(maladyIndex, 1);
-    },
-
-    // heal & remove all infection from this organism
-    purify() {
-        const maladies = this.maladies;
-        let malady = maladies.pop();
-        while (malady) {
-            malady.cure(this.organism);
-            malady = maladies.pop();
-        }
-    },
-
-    // transmit all infection from this organism to an other
-    // depending on each infection behaviour otherOrganism will host/be hurted by this organism infections
-    transmit(otherOrganism) {
-        const otherOrganismPrototype = Object.getPrototypeOf(otherOrganism);
-
-        for (let malady of this.createPropagationIterable()) {
-            const infection = malady.infection;
-
-            if (infection.canInfect(otherOrganismPrototype)) {
-                let transmittedMalady = otherOrganism.health.host(infection);
-                if (debugInfectionTranmission) {
-                    console.log('transmit infection to', otherOrganism);
-                }
-                if (malady.hurting) {
-                    console.log('make malady hurt right now');
-                    transmittedMalady.hurt(otherOrganism);
-                }
-            } else if (infection.canBeHostedBy(otherOrganismPrototype)) {
-                otherOrganism.health.host(infection);
-                if (debugInfectionTranmission) {
-                    console.log('transmit infection to', otherOrganism);
-                }
-            } else if (debugInfectionTranmission) {
-                console.log('infection cannot be transmitted to', otherOrganism);
-            }
-        }
+    asMatcherStrict() {
+        const Prototype = this;
+        return function() {
+            return Object.getPrototypeOf(this) === Prototype;
+        };
     }
 });
-Element.reconstruct(function() {
-    this.health = Health.create(this);
-});
-Element.refine({
-    infect(arg) {
-        const infection = Infection.from(arg);
-        this.health.infect(infection);
-        return this;
-    },
+export {Element};
 
-    host(infection) {
-        this.health.host(infection);
-        return this;
-    },
-
-    transmit(element) {
-        this.health.transmit(element);
-    },
-
-    cure(infection) {
-        this.health.cure(infection);
-        return this;
-    },
-
-    purify() {
-        this.health.purify();
-        return this;
-    }
-});
-Element.hooks.childAdded = function(child) {
-    // parent propagate his health to child
-    // problem: infection happens to late
-    this.transmit(child);
+/* ------------------------ PRIMITIVES ------------------------ */
+const PrimitiveProperties = {
+    primitiveMark: true
 };
-Element.refine({
-    procreate() {
-        const progeny = this.createConstructor.apply(this, arguments);
-        // sthing is missing : every appendChild must result in health propagation
-        // so that readProperties would create property with an infected health
-        this.transmit(progeny);
-        return progeny;
+const NullPrimitiveElement = Element.extend('null', PrimitiveProperties);
+const UndefinedPrimitiveElement = Element.extend('undefined', PrimitiveProperties);
+const BooleanPrimitiveElement = Element.extend('boolean', PrimitiveProperties);
+const NumberPrimitiveElement = Element.extend('number', PrimitiveProperties);
+const StringPrimitiveElement = Element.extend('string', PrimitiveProperties);
+const SymbolPrimitiveElement = Element.extend('symbol', PrimitiveProperties);
+export {
+    PrimitiveProperties,
+    NullPrimitiveElement,
+    UndefinedPrimitiveElement,
+    BooleanPrimitiveElement,
+    NumberPrimitiveElement,
+    StringPrimitiveElement,
+    SymbolPrimitiveElement
+};
+
+/* ------------------------ COMPOSITES ------------------------ */
+// must be registered before ObjectElement because it must match before (during Lab.match)
+const PropertyElement = Element.extend('Property', {
+    can(what) {
+        const lastChar = what[what.length - 1];
+        let abilityName;
+        if (lastChar === 'a' || lastChar === 'e') {
+            abilityName = what.slice(0, -1) + 'able';
+        } else {
+            abilityName = what + 'able';
+        }
+
+        return this.getChildByName(abilityName) !== false;
+    },
+
+    getChildByName(name) {
+        return this.children.find(function(child) {
+            return child.name === name;
+        });
+    },
+
+    canConfigure() {
+        return this.can('configure');
+    },
+
+    canEnumer() {
+        return this.can('enumer');
+    },
+
+    canWrite() {
+        return this.can('write');
+    },
+
+    get data() {
+        return this.getChildByName('value');
+    },
+
+    get getter() {
+        return this.getChildByName('getter');
+    },
+
+    get setter() {
+        return this.getChildByName('setter');
+    },
+
+    isData() {
+        return Boolean(this.getChildByName('writable'));
+    },
+
+    isAccessor() {
+        // seul la présent de get ou set garantie qu'on a bien un accessor
+        // parce que il existe un moment où propertyElement n'a pas encore
+        // d'enfant et donc n'est ni data ni accessor
+        // ça pose sûrement souci dailleurs lors de la transformation
+        // puisque du coup includeChild va retourner true tant qu'on ne sait pas quel type
+        // de propriété on souhait obtenir à la fin
+        return Boolean(this.getChildByName('get') || this.getChildByName('set'));
+    },
+
+    install(element) {
+        const descriptor = this.createDescriptor();
+        // console.log('set', this.name, '=', descriptor, 'on', element.value);
+        Object.defineProperty(element.value, this.name, descriptor);
+    },
+
+    createDescriptor() {
+        const descriptor = {};
+        this.children.forEach(function(child) {
+            descriptor[child.name] = child.value;
+        });
+        return descriptor;
+    },
+
+    uninstall(element) {
+        // console.log('delete', this.name, 'on', element.value);
+        delete element.value[this.name];
     }
 });
-
-export {Infection};
-*/
-
-/*
-const ElementInfection = Infection.extend({
-    constructor(elementPrototype, symptoms) {
-        this.elementPrototype = elementPrototype;
-        this.symptoms = symptoms;
+function createConstructedByProperties(Constructor) {
+    return {
+        valueConstructor: Constructor
+    };
+}
+const ObjectElement = Element.extend('Object', createConstructedByProperties(Object), {
+    hasProperty(name) {
+        return this.children.some(function(child) {
+            return PropertyElement.isPrototypeOf(child) && child.name === name;
+        });
     },
 
-    canInfect(elementPrototype) {
-        return this.elementPrototype === elementPrototype;
-    },
+    getProperty(name) {
+        return this.children.find(function(child) {
+            return PropertyElement.isPrototypeOf(child) && child.name === name;
+        });
+    }
+});
+const ArrayElement = ObjectElement.extend('Array', createConstructedByProperties(Array));
+const BooleanElement = ObjectElement.extend('Boolean', createConstructedByProperties(Boolean));
+const NumberElement = ObjectElement.extend('Number', createConstructedByProperties(Number));
+const StringElement = ObjectElement.extend('String', createConstructedByProperties(String));
+const RegExpElement = ObjectElement.extend('RegExp', createConstructedByProperties(RegExp));
+const DateElement = ObjectElement.extend('Date', createConstructedByProperties(Date));
+// handle function as primitive because perf
+const FunctionElement = ObjectElement.extend('Function',
+    createConstructedByProperties(Function),
+    PrimitiveProperties
+);
+// handle error as primitive because hard to preserve stack property
+const ErrorElement = ObjectElement.extend('Error',
+    createConstructedByProperties(Error),
+    PrimitiveProperties
+);
+// to add : MapElement, MapEntryElement, SetElement, SetEntryElement
+export {
+    ObjectElement,
+    PropertyElement,
+    BooleanElement,
+    NumberElement,
+    StringElement,
+    ArrayElement,
+    FunctionElement,
+    ErrorElement,
+    RegExpElement,
+    DateElement
+};
 
-    canBeHostedBy(elementPrototype) {
-        // no need for a primitive to host the infection (it has nothing beyong it to transmist)
-        if (elementPrototype.primitiveMark === true) {
+/* ----------------------------- TRANSFORMATION ------------------------- */
+const PropertyDefinition = util.extend({
+    constructor(name, descriptor) {
+        this.name = name;
+        if (descriptor) {
+            this.descriptor = descriptor;
+        }
+    },
+    descriptor: {}
+});
+
+// match
+(function() {
+    Element.refine({
+        match() {
             return false;
         }
-        // object property can always host infection
-        if (ObjectPropertyElement.isPrototypeOf(elementPrototype)) {
+    });
+
+    // null primitive is special
+    NullPrimitiveElement.refine({
+        match(value) {
+            return value === null;
+        }
+    });
+    // property are special
+    PropertyElement.refine({
+        match(value) {
+            return PropertyDefinition.isPrototypeOf(value);
+        }
+    });
+
+    function valueTypeMatchTagName(value) {
+        return typeof value === this.tagName;
+    }
+    [
+        UndefinedPrimitiveElement,
+        BooleanPrimitiveElement,
+        NumberPrimitiveElement,
+        StringPrimitiveElement,
+        SymbolPrimitiveElement
+    ].forEach(function(Element) {
+        Element.refine({
+            match: valueTypeMatchTagName
+        });
+    });
+    function valueMatchConstructorPrototype(value) {
+        return this.valueConstructor.prototype.isPrototypeOf(value);
+    }
+    [
+        ObjectElement,
+        BooleanElement,
+        NumberElement,
+        StringElement,
+        ArrayElement,
+        FunctionElement,
+        ErrorElement,
+        RegExpElement,
+        DateElement
+    ].forEach(function(Element) {
+        Element.refine({
+            match: valueMatchConstructorPrototype
+        });
+    });
+})();
+
+const scanValue = polymorph();
+const scanProduct = function(value, name) {
+    if (Element.isPrototypeOf(value)) {
+        console.warn('scanning an element is not supposed to happen for now');
+        return value;
+    }
+
+    const product = Lab.findElementByValueMatch(value).create();
+    product.value = value;
+
+    if (arguments.length > 1) {
+        if (PropertyDefinition.isPrototypeOf(value)) {
+            product.name = value.name;
+        } else {
+            product.name = name;
+        }
+    }
+
+    return product;
+};
+function scanProperties(propertyNames, element) {
+    const value = element.value;
+    for (let name of propertyNames) {
+        const descriptor = Object.getOwnPropertyDescriptor(value, name);
+        const definition = PropertyDefinition.create(name, descriptor);
+        const property = scanProduct(definition, name);
+        element.appendChild(property);
+        property.scanValue();
+    }
+}
+scanValue.branch(
+    ObjectElement.asMatcher(),
+    function() {
+        scanProperties(Object.getOwnPropertyNames(this.value), this);
+    }
+);
+scanValue.branch(
+    PropertyElement.asMatcher(),
+    function() {
+        const value = this.value;
+        const descriptor = value.descriptor;
+        Object.keys(descriptor).forEach(function(key) {
+            const descriptorPropertyValue = descriptor[key];
+            const descriptorProperty = scanProduct(descriptorPropertyValue, key);
+            this.appendChild(descriptorProperty);
+            descriptorProperty.scanValue();
+        }, this);
+    }
+);
+// disable function.prototype.constructor property discoverability to prevent infinite recursion
+// it's because prototype is a cyclic structure due to circular reference between prototype/constructor
+scanValue.preferBranch(
+    function() {
+        const parentNode = this.parentNode;
+        const ancestor = parentNode ? parentNode.parentNode : null;
+
+        return (
+            ObjectElement.isPrototypeOf(this) &&
+            parentNode &&
+            PropertyElement.isPrototypeOf(parentNode) &&
+            parentNode.name === 'prototype' &&
+            ancestor &&
+            FunctionElement.isPrototypeOf(ancestor)
+        );
+    },
+    function() {
+        // when scanning a function prototype object omit the constructor property to prevent infinit recursion
+        scanProperties(Object.getOwnPropertyNames(this.value).filter(function(name) {
+            return name !== 'constructor';
+        }), this);
+    }
+);
+
+function cloneFunction(fn) {
+    // a true clone must handle new  https://gist.github.com/dmail/6e639ac50cec8074a346c9e10e76fa65
+    return function() {
+        return fn.apply(this, arguments);
+    };
+}
+
+// include child
+(function() {
+    Element.refine({
+        includeChild() {
+            // cela veut dire : une primitive ne peut pas avoir d'enfant
+            return this.primitiveMark !== true;
+        }
+    });
+    PropertyElement.refine({
+        includeChild(child) {
+            if (this.isData()) {
+                // data property ignores getter & setter
+                let include = (
+                    child.name === 'configurable' ||
+                    child.name === 'enumerable' ||
+                    child.name === 'writable' ||
+                    child.name === 'value'
+                );
+                // console.log('data property include', include);
+                return include;
+            }
+            if (this.isAccessor()) {
+                // accessor property ignores writable & values
+                let include = (
+                    child.name === 'configurable' ||
+                    child.name === 'enumerable' ||
+                    child.name === 'get' ||
+                    child.name === 'set'
+                );
+                // console.log('accessor property include', include);
+                return include;
+            }
             return true;
         }
-        return false;
+    });
+})();
+
+const variation = polymorph();
+const conflictsWith = polymorph();
+
+const combineChildren = (function() {
+    const debug = !true;
+
+    function combineChildrenOneSource(sourceElement, destinationElement) {
+        const filteredSourceElementChildren = filterChildren(sourceElement, destinationElement);
+        const unConflictualSourceElementChildren = collideChildren(filteredSourceElementChildren, destinationElement);
+
+        return unConflictualSourceElementChildren;
     }
-});
 
-pour l'instantiation voici ce qu'on aurait à faire niv infection
+    function combineChildrenTwoSource(firstSourceElement, secondSourceElement, destinationElement) {
+        // afin d'obtenir un objet final ayant ses propriétés dans l'ordre le plus logique possible
+        // on a besoin de plusieurs étapes pour s'assurer que
+        // - les propriétés présentent sur l'objet restent définies avant les autres
+        // - les propriétés du premier composant sont définies avant celles du second
 
-const InstantiationInfection = ElementInfection.extend();
--> il manque un moyen de dire comment l'infection est censé se déclenché
--> il faut préciser qu'ici c'est lorsqu'on fait construct()
-
-// ce que ça m'évoque ce que je vois
-// c'est qu'on peut modifier le comportement d'une méthode de manière puissante via les infections
-// on peut y mettre un comportement par défaut qu'on override
-// a-t-on besoin de heal?
-// pourquoi cette override se fait de manière temporaire par contre ?
-// a-t-on seulement besoin des symptomes il suffirait de récup l'infection qui correspond et d'apeller ses méthode a elle
-// le fait d'installer la méthode sur l'objet est bien pratique quand même
-// est ce qu'on ets daccord que là si construct est appelé sur un objet
-// seulement objectInstantiation infection sera hurt() puisque sinon il ne recoit pas l'infection
-// pas vraiment vrai : si l'élément host la maladie mais ne peut pas la contracter
-// le code ci-dessous le force à contracter la maladie alors qu'on ne le veut pas
-Element.refine({
-    construct() {
-        const constructMaladies = this.health.maladies.filter(function(malady) {
-            return malady.infection.trigger === 'construct';
-        });
-        for (let malady of constructMaladies) {
-            malady.hurt();
-        }
-        // now I can construct
-        const result = this.compose();
-        for (let malady of constructMaladies) {
-            malady.heal();
-        }
-        return result;
+        // 1: garde uniquement les enfants que destinationElement accepte
+        const filteredFirstSourceChildren = filterChildren(
+            firstSourceElement,
+            destinationElement
+        );
+        const filteredSecondSourceChildren = filterChildren(
+            secondSourceElement,
+            destinationElement
+        );
+        // 2 : met les enfants dont le conflit concerne first ou second avec existing et récupère ce qui reste
+        const remainingFirstSourceChildren = collideChildren(
+            filteredFirstSourceChildren,
+            destinationElement
+        );
+        const remainingSecondSourceChildren = collideChildren(
+            filteredSecondSourceChildren,
+            destinationElement
+        );
+        // 3 : met les enfants pour lesquelles il y a un conflit entre first & second et récupère ce qui reste
+        const remainingChildren = collideRemainingChildren(
+            remainingFirstSourceChildren,
+            remainingSecondSourceChildren,
+            destinationElement
+        );
+        // 4 : retourne ce qui reste
+        return remainingChildren;
     }
-});
 
-comment faire en sorte d'avoir sa propre logique d'instantiation
-il n'y a pas d'infection par défaut puisque pas de santé par défaut pour ObjectElement
-cela signifique qu'on doit garder quelque part la liste des infections liées à construct
-lorsque construct est appelé on met les infection par défaut dans l'organisme (en début de chaine)
-puis on déclenche toutes les infections de sorte que s'il existe déjà des infections sur lorganisme
-elle se feront en dernier et seront donc prioritaire ?
-
-le moyen d'avoir des infections par défaut est juste d'infecter le baseElement qui sers à composer
-en l'infectant lui il va infecter ses descendants, reste qu'il faut pouvoir définir des infections fortes et faible
-parce que mes infections à moi sont faible, bah c'est juste géré tout seul par le fait que les infections du user
-arrive après dans le tableau
-
-const ObjectInstantiationInfection = InstantiationInfection.create(ObjectElement, {
-    fill(element) {
-        this.value = Object.create(element.value);
-        // then put all the properties from element into this
-        // but the properties must be infected so that they are ignored if their value are primitive
-        this.importChildren(element);
-    }
-});
-baseElement.health.host(ObjectInstantiationInfection);
-
-const PropertyInstantiationInfection = InstantiationInfection.create(ObjectPropertyElement, {
-    mustBeImported() {
-        // they have to be imported if one of their children is non primitive
-        return this.children.some(function(child) {
-            return child.primitiveMark !== true;
+    function filterChildren(sourceElement, destinationElement) {
+        return sourceElement.children.filter(function(sourceElementChild) {
+            if (destinationElement.includeChild(sourceElementChild) === false) {
+                if (debug) {
+                    console.log(sourceElementChild.path, 'cannot be included at', destinationElement.path);
+                }
+                return false;
+            }
+            return true;
         });
     }
-});
-baseElement.health.host(PropertyInstantiationInfection);
 
-// pour la composition
-const CompositionInfection = Infection.extend();
-// -> il faut préciser qu'ici c'est lorsqu'on fait compose()
-
-const ObjectCompositionInfection = CompositionInfection.create(ObjectElement, {
-
-});
-
-ce qu'on va faire:
-
-Transformation aura
-make(elementModel, parentElement) -> retourne un élément depuis élémentModel, interdit de retourner le même
-move(element, elementModel, parentElement) -> met l'élément dans parentElement si existe
-fill(element, elementModel, parentElement) -> définit element.value et optionellement element.children
-pack(element, elementModel, parentElement) -> fait certaines choses une fois tout ceci fait
-
-l'infection consisteras juste à set la propriété transformation/reaction de l'élément
-pour l'instantiation on auras donc un truc du genre
-Reusable composable infectable structure RCIS R6
-RCIP Polymorph
-// on pourrait soit avoir cette approche d'avoir une infection capble de modifier plusieurs méthodes
-// soit une approche méthode par méthode genre
-composite.transform.infect(
-    Object,
-    function(parentNode, index) {
-        return Transformation.extend({
-            fill(element, elementModel) {
-                element.value = Object.create(elementModel.value);
-                element.importChildren(elementModel);
+    function collideChildren(children, destinationElement) {
+        return children.filter(function(child) {
+            const destinationChild = findConflictualChild(child, destinationElement.children);
+            if (destinationChild) {
+                collideChild(child, destinationChild, destinationElement);
+                return false;
             }
-        }).create(this, parentNode, index);
-    },
-    [ObjectProperty, function(element) {
-        // si tous les enfants de la propriété sont non composite
-        // comment savoir ça sachant que l'info est non constante puisque
-        // un object peut se comporter comme un primitif (function)
-        // pour savoir il faudrais savoir si la transformation du child
-        // va créer un nouvel élément (et je ne parle pas de copie)
-        // ou alors on doit explicitement dire ce qu'on hérite
-        // tout ce qui n'est pas hérité est copié
-        if (property.descriptor.hasOwnProperty('value')) {
-            const valueNode = property.valueNode;
-            return ObjectElement.isPrototypeOf(valueNode) === false;
-        }
-        // const node = property.getterNode || property.setterNode;
-        return true;
-    }],
-    function(parentNode, index) {
-        return CancelTransformation.create(this, parentNode, index);
-    },
-    ObjectProperty,
-    function(parentNode, index) {
-        return Transformation.extend({
-            fill() {
+            return true;
+        });
+    }
 
+    function findConflictualChild(child, children) {
+        return children.find(function(destinationChild) {
+            return child.conflictsWith(destinationChild);
+        }, this);
+    }
+
+    function collideChild(child, otherChild, destinationElement) {
+        if (debug) {
+            if (PropertyElement.isPrototypeOf(otherChild)) {
+                console.log(
+                    'collision for', otherChild.path
+                );
+            } else {
+                console.log(
+                    'collision for', otherChild.path, 'between', otherChild.value, 'and', child.value
+                );
             }
-        }).create(this, parentNode, index);
-    }
-);
-// on peut modifier le comportement de la méthode reactWith comme ceci
-composite.reactWith.infect(
-
-);
-
-// l'avantage de l'écriture avec
-composite.infect(
-    Object,
-    {
-        transformation: {
-
         }
+
+        otherChild.combine(child, destinationElement).produce();
     }
-);
-// c'est qu'on peut modifier une propriété, pas que une méthode
-// et qu'on évite de réécrire .create(this, parentNode, index)
-// par contre on ne sait pas quand ni comment déclencher l'infection
-// bah soit l'élément match il est infecté avec la dite propriété
-// soit il ne match pas et est porteur sain de l'infection
 
-// intervertir malady et infection: une infection s'applique à un organism et une maladie c'est plus générique
-// il faut aussi un truc genre infectWeak qui ne peut infecter que l'objet lui même mais pas ses descendants
+    function collideRemainingChildren(remainingFirstChildren, remainingSecondChildren, destinationElement) {
+        const remainingChildren = [];
+        const conflictualSecondChildren = [];
 
-en gros ça donne:
+        for (let remainingFirstChild of remainingFirstChildren) {
+            const remainingSecondChild = findConflictualChild(remainingFirstChild, remainingSecondChildren);
+            if (remainingSecondChild) {
+                collideChild(remainingFirstChild, remainingSecondChild, destinationElement);
+                conflictualSecondChildren.push(remainingSecondChild);
+            } else {
+                remainingChildren.push(remainingFirstChild);
+            }
+        }
+        for (let remainingSecondChild of remainingSecondChildren) {
+            if (conflictualSecondChildren.indexOf(remainingSecondChild) === -1) {
+                remainingChildren.push(remainingSecondChild);
+            }
+        }
 
-un objet qui sers à gérer une méthode avec des cas nommé d'utilisation genre
+        return remainingChildren;
+    }
 
-match()
-*/
+    return function combineChildren() {
+        if (arguments.length === 2) {
+            return combineChildrenOneSource.apply(this, arguments);
+        }
+        if (arguments.length === 3) {
+            return combineChildrenTwoSource.apply(this, arguments);
+        }
+        throw new Error('combineChildren expect exactly 2 or 3 arguments');
+    };
+})();
 
-export {
-    Element,
-    Lab
+const CancelTransformation = {};
+const Transformation = util.extend({
+    debug: false,
+
+    constructor() {
+        this.args = arguments;
+    },
+    asMethod() {
+        const self = this;
+        return function(...args) {
+            return self.create(this, ...args);
+        };
+    },
+
+    make() {},
+    transform() {},
+    filter(product) {
+        if (!product) {
+            return false;
+        }
+        const parentNode = this.args[this.parentNodeIndex];
+        if (!parentNode) {
+            return true;
+        }
+        return parentNode.includeChild(product);
+    },
+    move(product) {
+        const parentNode = this.args[this.parentNodeIndex];
+        if (parentNode) {
+            const existing = this.args[0];
+            if (Element.isPrototypeOf(existing) && existing.parentNode === parentNode) {
+                parentNode.replaceChild(existing, product);
+            } else {
+                parentNode.appendChild(product);
+            }
+        }
+    },
+    fill() {
+
+    },
+    pack(product) {
+        product.variation('added');
+    },
+
+    createProduct() {
+        let product;
+
+        try {
+            const args = this.args;
+            const value = this.make(...args);
+            product = this.transform(value, ...args);
+            if (this.filter(product, ...args) === false) {
+                product = undefined;
+            }
+        } catch (e) {
+            if (e === CancelTransformation) {
+                product = undefined;
+            } else {
+                throw e;
+            }
+        }
+
+        return product;
+    },
+
+    produce() {
+        const product = this.createProduct();
+        if (product) {
+            const args = this.args;
+            this.move(product, ...args);
+            this.fill(product, ...args);
+            this.pack(product, ...args);
+        }
+        return product;
+    }
+});
+Element.hooks.removed = function() {
+    this.variation('removed');
 };
-export default Lab;
+Element.refine({
+    mutate(value) {
+        const product = scanProduct(value, this.name);
+        this.replace(product);
+        product.scanValue();
+        product.variation('change', this);
+        return product;
+    }
+});
+
+const touchValue = polymorph();
+const TouchTransformation = Transformation.extend({
+    parentNodeIndex: 1,
+
+    make(elementModel, parentNode) {
+        return elementModel.touchValue(parentNode);
+    },
+
+    transform(touchedValue, elementModel) {
+        return scanProduct(touchedValue, elementModel.name);
+    },
+
+    fill(product, elementModel) {
+        product.scanValue();
+        const remainingChildren = combineChildren(elementModel, product);
+        for (let child of remainingChildren) {
+            child.touch(product).produce();
+        }
+    }
+});
+const touch = TouchTransformation.asMethod();
+const combineValue = polymorph();
+const CombineTransformation = Transformation.extend({
+    parentNodeIndex: 2,
+
+    make(firstElement, secondElement, parentNode) {
+        return firstElement.combineValue(secondElement, parentNode);
+    },
+
+    transform(combinedValue, firstElement, secondElement) {
+        // comment je sais le nom du produit ??????
+        // soit c'est forcément celui de firstElement parce qu'il ont le même
+        // soit dans le cas des propriétés il faut choisir
+        // et ce choix est fait par combineValue mais je n'ai pas la main dessus
+        // je rapelle qu'idéalement une valeur ne DOIT pas savoir de qu'elle propriété elle provient
+        // les objet propriétés ne sont donc pas des éléments comme les autres
+        // ils forments le lien entre deux valeurs mais ne sont pas des valeur
+        let product = scanProduct(combinedValue, firstElement.name);
+        product.firstComponent = firstElement;
+        product.secondComponent = secondElement;
+        return product;
+    },
+
+    fill(product, firstElement, secondElement) {
+        product.scanValue();
+
+        const remainingChildren = combineChildren(firstElement, secondElement, product);
+        for (let child of remainingChildren) {
+            child.touch(product).produce();
+        }
+    }
+});
+const combine = CombineTransformation.asMethod();
+const instantiateValue = polymorph();
+const InstantiateTransformation = Transformation.extend({
+    parentNodeIndex: 1,
+
+    make(elementModel, parentNode) {
+        return elementModel.instantiateValue(parentNode);
+    },
+
+    transform(instantiedValue, elementModel) {
+        return scanProduct(instantiedValue, elementModel.name);
+    },
+
+    fill(product, elementModel) {
+        product.scanValue();
+
+        const remainingChildren = combineChildren(elementModel, product);
+        for (let child of remainingChildren) {
+            child.instantiate(product).produce();
+        }
+    }
+});
+const instantiate = InstantiateTransformation.asMethod();
+
+/* ---------------- core ---------------- */
+// when a property is added/removed inside an ObjectElement
+variation.when(
+    function() {
+        return (
+            PropertyElement.isPrototypeOf(this) &&
+            this.parentNode &&
+            ObjectElement.isPrototypeOf(this.parentNode)
+        );
+    },
+    function(type) {
+        const property = this;
+        const objectElement = this.parentNode;
+        if (type === 'added') {
+            property.install(objectElement);
+        } else if (type === 'removed') {
+            property.uninstall(objectElement);
+        }
+    }
+);
+// quand un élément de la description d'une propriété change, réinstalle la sur son objet
+// amélioration : pas besoin de faire ça sur la valeur de la propriété length dans un tableau (javascript le fait auto)
+variation.when(
+    function(type) {
+        const parentNode = this.parentNode;
+
+        return (
+            type === 'change' &&
+            PropertyElement.isPrototypeOf(parentNode) &&
+            parentNode.parentNode &&
+            ObjectElement.isPrototypeOf(parentNode.parentNode)
+        );
+    },
+    function() {
+        this.parentNode.install(this.parentNode.parentNode);
+    }
+);
+
+// property children conflict is special, only child of the same descriptorName are in conflict
+conflictsWith.branch(
+    function(otherChild) {
+        return (
+            PropertyElement.isPrototypeOf(this.parentNode) &&
+            PropertyElement.isPrototypeOf(otherChild.parentNode)
+        );
+    },
+    function(otherChild) {
+        return this.name === otherChild.name;
+    }
+);
+// property conflict (use name)
+conflictsWith.branch(
+    function(otherElement) {
+        return (
+            PropertyElement.isPrototypeOf(this) &&
+            PropertyElement.isPrototypeOf(otherElement)
+        );
+    },
+    function(otherProperty) {
+        return this.name === otherProperty.name;
+    }
+);
+conflictsWith.branch(null, function() {
+    return false;
+});
+
+// Object
+touchValue.branch(
+    ObjectElement.asMatcherStrict(),
+    function() {
+        return {};
+    }
+);
+// Array
+touchValue.branch(
+    ArrayElement.asMatcher(),
+    function() {
+        return [];
+    }
+);
+// Function
+touchValue.branch(
+    FunctionElement.asMatcher(),
+    function() {
+        return cloneFunction(this.value);
+    }
+);
+// Boolean, Number, String, RegExp, Date, Error
+touchValue.branch(
+    ObjectElement.asMatcher(),
+    function() {
+        return new this.valueConstructor(this.value.valueOf()); // eslint-disable-line new-cap
+    }
+);
+// primitives
+touchValue.branch(
+    function() {
+        return this.primitiveMark;
+    },
+    function() {
+        return this.value;
+    }
+);
+// property
+touchValue.branch(
+    PropertyElement.asMatcher(),
+    function() {
+        return PropertyDefinition.create(this.value.name);
+    }
+);
+// this case happens with array length property
+// or function name property, in that case we preserve the current property of the compositeObject
+// -> à supprimer on laissera ceci se produire, à la limite on mettra un warning
+// mais on va par contre lister les cas où ça peut se produire et éviter l'erreur
+// array length c'est déjà fait pour function.name ça dépend de l'environement
+// donc on test et si besoin on empêche les noms de fonction d'écraser l'existant
+combineValue.branch(
+    function(otherElement, parentNode) {
+        // console.log('own property is not configurable, cannot make it react');
+        return (
+            PropertyElement.isPrototypeOf(this) &&
+            this.parentNode === parentNode &&
+            this.canConfigure() === false
+        );
+    },
+    function() {
+        console.warn('prevent transformation because property is not configurable');
+        throw CancelTransformation;
+    }
+);
+// pure element used otherElement touched value
+combineValue.branch(
+    Element.asMatcherStrict(),
+    function(otherElement, parentNode) {
+        return otherElement.touchValue(parentNode);
+    }
+);
+// primitive use otherElement touched value
+combineValue.branch(
+    function(otherElement) {
+        return (
+            this.primitiveMark ||
+            otherElement.primitiveMark
+        );
+    },
+    function(otherElement, parentNode) {
+        return otherElement.touchValue(parentNode);
+    }
+);
+// property use otherProperty touched value (inherits name) (must no inherits descriptor however)
+combineValue.branch(
+    function(otherElement) {
+        return (
+            PropertyElement.isPrototypeOf(this) &&
+            PropertyElement.isPrototypeOf(otherElement)
+        );
+    },
+    function(otherProperty, parentNode) {
+        return otherProperty.touchValue(parentNode);
+    }
+);
+// for now combinedValue on Object, Array, Function, etc ignores otherElement value
+// and return this touched value, however we can later modify this behaviour
+// to say that combinedString must be concatened or combine function must execute one after an other
+// Object
+combineValue.branch(
+    ObjectElement.asMatcherStrict(),
+    function(parentNode) {
+        return this.touchValue(parentNode);
+    }
+);
+// Array
+combineValue.branch(
+    ArrayElement.asMatcher(),
+    function(parentNode) {
+        return this.touchValue(parentNode);
+    }
+);
+// Function
+combineValue.branch(
+    FunctionElement.asMatcher(),
+    function(parentNode) {
+        return this.touchValue(parentNode);
+    }
+);
+// Boolean, Number, String, RegExp, Date, Error
+combineValue.branch(
+    ObjectElement.asMatcher(),
+    function(parentNode) {
+        return this.touchValue(parentNode);
+    }
+);
+
+instantiateValue.branch(
+    Element.asMatcherStrict(),
+    function() {
+        throw new Error('pure element cannot be instantiated');
+    }
+);
+instantiateValue.branch(
+    ObjectElement.asMatcher(),
+    function() {
+        // console.log('Object.create at', this.path);
+        return Object.create(this.value);
+    }
+);
+// delegate property which hold primitives
+instantiateValue.branch(
+    function() {
+        return (
+            PropertyElement.isPrototypeOf(this) &&
+            this.isData() &&
+            this.data.primitiveMark
+        );
+    },
+    function() {
+        // console.log('delegate', this.path);
+        throw CancelTransformation;
+    }
+);
+instantiateValue.branch(
+    PropertyElement.asMatcher(),
+    function(parentNode) {
+        // console.log('instantiate property at', this.path);
+        return this.touchValue(parentNode);
+    }
+);
+
+/* ---------------- Freezing value ---------------- */
+// disabled because freezing the value has an impact so that doing
+// instance = Object.create(this.value); instance.property = true; will throw
+// variation.when(
+//     function() {
+//         return ObjectElement.isPrototypeOf(this);
+//     },
+//     function() {
+//         Object.freeze(this.value);
+//     }
+// );
+
+/* ---------------- countTracker ---------------- */
+(function() {
+    const debug = false;
+    const STRING = 0; // name is a string it cannot be an array index
+    const INFINITE = 1; // name is casted to Infinity, NaN or -Infinity, it cannot be an array index
+    const FLOATING = 2; // name is casted to a floating number, it cannot be an array index
+    const NEGATIVE = 3; // name is casted to a negative integer, it cannot be an array index
+    const TOO_BIG = 4; // name is casted to a integer above Math.pow(2, 32) - 1, it cannot be an array index
+    const VALID = 5; // name is a valid array index
+    const maxArrayLength = Math.pow(2, 32) - 1;
+    const maxArrayIndex = maxArrayLength - 1;
+    function getArrayIndexStatusForString(name) {
+        if (isNaN(name)) {
+            return STRING;
+        }
+        return getArrayIndexStatusForNumber(Number(name));
+    }
+    function getArrayIndexStatusForNumber(number) {
+        let status = getNumberStatus(number);
+        if (status === undefined) {
+            if (number > maxArrayIndex) {
+                status = TOO_BIG;
+            } else {
+                status = VALID;
+            }
+        }
+        return status;
+    }
+    function getNumberStatus(number) {
+        let status;
+        if (isFinite(number) === false) {
+            status = INFINITE;
+        } else if (Math.floor(number) !== number) {
+            status = FLOATING;
+        } else if (number < 0) {
+            status = NEGATIVE;
+        }
+        return status;
+    }
+    function getArrayLengthStatusForNumber(number) {
+        let status = getNumberStatus(number);
+        if (status === undefined) {
+            if (number > maxArrayLength) {
+                status = TOO_BIG;
+            } else {
+                status = VALID;
+            }
+        }
+        return status;
+    }
+
+    const countTrackerPropertyName = 'length';
+    Element.refine({
+        isCountTrackerValue() {
+            return (
+                this.tagName === 'number' &&
+                getArrayLengthStatusForNumber(this.value) === VALID
+            );
+        },
+
+        isIndexedProperty() {
+            return (
+                PropertyElement.isPrototypeOf(this) &&
+                getArrayIndexStatusForString(this.name) === VALID
+            );
+        },
+
+        isCountTrackerProperty() {
+            return (
+                PropertyElement.isPrototypeOf(this) &&
+                this.name === countTrackerPropertyName &&
+                this.isData() &&
+                this.data.isCountTrackerValue()
+            );
+        },
+
+        getCountTrackerProperty() {
+            if (ObjectElement.isPrototypeOf(this)) {
+                return this.getProperty(countTrackerPropertyName);
+            }
+            return null;
+        },
+
+        hasCountTrackerProperty() {
+            const countTrackerProperty = this.getCountTrackerProperty();
+            return (
+                countTrackerProperty &&
+                countTrackerProperty.isData() &&
+                countTrackerProperty.data.isCountTrackerValue()
+            );
+        }
+    });
+
+    // when an indexed property is added/removed inside an Element having a property count tracker
+    variation.when(
+        function() {
+            return (
+                this.isIndexedProperty() &&
+                this.parentNode &&
+                this.parentNode.hasCountTrackerProperty()
+            );
+        },
+        function(type) {
+            const countTrackerProperty = this.parentNode.getCountTrackerProperty();
+            const countTracker = countTrackerProperty.data;
+
+            if (type === 'added') {
+                if (debug) {
+                    console.log('increment count tracker value');
+                }
+                countTracker.mutate(countTracker.value + 1);
+            } else if (type === 'removed') {
+                if (debug) {
+                    console.log('decrement count tracker value');
+                }
+                countTracker.mutate(countTracker.value - 1);
+            }
+        }
+    );
+
+    // length count tracker must be in sync with current amount of indexed properties
+    // doit se produire pour touch, combine et instantiate mais pas scan
+    // il faut couvrir tous ces cas
+    // arraylike -> {length: 0}.compose() or instantiate()
+    // array -> [].compose() or instantiate()
+    // arraylike + object -> {length: 0}.compose({})
+    // arraylike + arraylike -> {length: 0}.compose({length: 1})
+    // arraylike + array -> {length: 1}.compose([])
+    // array + array -> [].compose([])
+    // array + arraylike -> [].compose({length: 1})
+    // array + object -> [].compose({})
+
+    function elementIsCountTrackerValue(element, destinationParentNode) {
+        const parentNode = element.parentNode;
+        const destinationAncestor = destinationParentNode ? destinationParentNode.parentNode : null;
+
+        return (
+            element.isCountTrackerValue() &&
+            parentNode &&
+            parentNode.isCountTrackerProperty() &&
+            parentNode.data === element &&
+            destinationParentNode &&
+            destinationAncestor &&
+            ObjectElement.isPrototypeOf(destinationAncestor)
+        );
+    }
+
+    function getIndexedPropertyCount(element) {
+        const indexedPropertyCount = element.children.reduce(function(previous, current) {
+            if (current.isIndexedProperty()) {
+                previous++;
+            }
+            return previous;
+        }, 0);
+        if (debug) {
+            console.log('override combined count tracker to', indexedPropertyCount);
+        }
+        return indexedPropertyCount;
+    }
+
+    [touchValue, instantiateValue].forEach(function(method) {
+        method.preferBranch(
+            function(destinationParentNode) {
+                return elementIsCountTrackerValue(this, destinationParentNode);
+            },
+            function(destinationParentNode) {
+                return getIndexedPropertyCount(destinationParentNode.parentNode);
+            }
+        );
+    });
+    combineValue.preferBranch(
+        function(otherElement, destinationParentNode) {
+            return elementIsCountTrackerValue(this, destinationParentNode);
+        },
+        function(otherElement, destinationParentNode) {
+            return getIndexedPropertyCount(destinationParentNode.parentNode);
+        }
+    );
+
+    // this case exists because array length property is not configurable
+    // because of that we cannot redefine it when composing array with arraylike
+    // so when there is a already a length property assume it's in sync
+    combineValue.preferBranch(
+        function() {
+            return (
+                this.name === 'length' &&
+                PropertyElement.isPrototypeOf(this) &&
+                this.parentNode &&
+                ArrayElement.isPrototypeOf(this.parentNode)
+            );
+        },
+        function() {
+            if (debug) {
+                console.log('cancel current array length transformation');
+            }
+            throw CancelTransformation;
+        }
+    );
+})();
+
+/* ---------------- array concatenation ---------------- */
+(function() {
+    const debug = !true;
+    const ignoreConcatenedPropertyConflict = conflictsWith.branch(
+        function(otherProperty) {
+            return (
+                this.name === otherProperty.name &&
+                this.isIndexedProperty() &&
+                this.parentNode &&
+                this.parentNode.hasCountTrackerProperty()
+            );
+        },
+        function(otherProperty) {
+            if (debug) {
+                console.log(
+                    'ignoring conflict at', this.path, 'because', otherProperty.data.value, 'will be concatened'
+                );
+            }
+            return false;
+        }
+    );
+    conflictsWith.prefer(ignoreConcatenedPropertyConflict);
+    const concatIndexedProperty = touchValue.branch(
+        function(parentNode) {
+            return (
+                this.isIndexedProperty() &&
+                parentNode &&
+                parentNode.hasCountTrackerProperty()
+            );
+        },
+        function(parentNode) {
+            let index = this.value.name;
+            const countTrackerProperty = parentNode.getCountTrackerProperty();
+            const countTrackerData = countTrackerProperty.data;
+            const countTrackerValue = countTrackerData.value;
+
+            if (debug) {
+                console.log(
+                    'concat', this.data.value,
+                    'inside', parentNode.value, parentNode.value.length, countTrackerValue
+                );
+            }
+
+            if (countTrackerValue > 0) {
+                const currentIndex = Number(index);
+                const concatenedIndex = countTrackerValue;
+                // currentIndex + countTrackerValue;
+                index = String(concatenedIndex);
+                if (debug) {
+                    console.log('index updated from', currentIndex, 'to', concatenedIndex);
+                }
+            }
+
+            return PropertyDefinition.create(index);
+        }
+    );
+    touchValue.prefer(concatIndexedProperty);
+})();
+
+const transformProperties = {
+    scanValue,
+    variation,
+    conflictsWith,
+    touchValue,
+    touch,
+    combineValue,
+    combine,
+    instantiateValue,
+    instantiate,
+    construct() {
+        return this.instantiate().produce().value;
+    }
+};
+
+Element.refine(transformProperties);
+
+const scan = function(value) {
+    const product = scanProduct(value);
+    product.scanValue();
+    return product;
+};
+
+export {scan};
