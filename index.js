@@ -76,7 +76,7 @@ par contre quand je fais
 -> les constructors sont appelé sr instance
 */
 
-import {compose} from './src/lab.js';
+import {compose, composer} from './src/lab.js';
 
 export default compose;
 
@@ -267,6 +267,27 @@ export const test = {
                 };
                 const element = compose(obj);
                 element.compose();
+            });
+
+            this.add('composer with relative method binding', function() {
+                const composeBind = composer({
+                    functionBehaviour: 'composite',
+                    bindMethod: true,
+                    bindMethodImplementation: 'relative'
+                });
+                const composite = composeBind({
+                    method() {
+                        return this;
+                    }
+                });
+                const compositeValue = composite.value;
+                const compositeValueMethod = compositeValue.method;
+
+                assert(compositeValue.method() === compositeValue, 'method thisValue is owner when attached');
+                assert(compositeValueMethod() === compositeValue, 'method thisValue is owner when detached');
+                assert(compositeValueMethod.call(10) === 10, 'method thisValue is value passed to .call()');
+                const instance = new compositeValueMethod(); // eslint-disable-line new-cap
+                assert(instance !== compositeValue, 'method thisValue is value passed by js engine on new keyword');
             });
         });
     }

@@ -51,7 +51,7 @@ Here is the list options to influence composition behaviour.
 
 name: defaultValue                   | description
 ------------------------------------ | -------------------------------------------------------------------------
-handleFunctionAsPrimitive: true      | Force function to behave as primitives even if they are objects
+functionBehaviour: 'primitive'       | 'primitive' force function to behave as primitive, 'composite' let them behave as composite
 bindMethod: false                    | Force this to be the function owner
 bindMethodImplementation: 'absolute' | 'absolute' freeze this, 'relative' allows .call & .apply to override
 concatArray: true					 | Array entries are concatened instead of conflicting

@@ -4,7 +4,18 @@ import util from './util.js';
 import polymorph from './polymorph.js';
 import Node from './node.js';
 
-function createComposer() {
+const defaultOptions = {
+    functionBehaviour: 'primitive',
+    bindMethod: false,
+    bindMethodImplementation: 'absolute',
+    concatArray: true,
+    concatArrayLike: true,
+    syncArrayLikeLength: true
+};
+
+function createComposer(customOptions = {}) {
+    const options = Object.assign({}, defaultOptions, customOptions);
+
     const Lab = util.extend({
         match(value) {
             const ElementMatchingValue = this.findElementByValueMatch(value);
@@ -385,64 +396,6 @@ function createComposer() {
             }), this);
         }
     );
-
-    const cloneFunction = (function() {
-        // https://gist.github.com/dmail/6e639ac50cec8074a346c9e10e76fa65
-        // https://gist.github.com/dmail/a593f694dfccb2a87bf926382cac998f
-        // il faudrais ptet détecter ces fonctions spécifiques (en utilisant originalFunctionSymbol a priori)
-        // on pourrait aussi utiliser valueOf et détecter que lorsque pour une fonction donné son valueOf
-        // retourne kk chose de différent de la fonction de départ c'est que cette fonction fait kk chose de spécial
-        // et leur attribuer un comportement différent dans certains cas
-        // pour le moment pas besoin
-        const originalFunctionSymbol = Symbol();
-        const prototypeApply = Function.prototype.apply;
-        const prototypeCall = Function.prototype.call;
-        prototypeApply.apply = prototypeApply;
-        prototypeCall.apply = prototypeApply;
-
-        function applyHook() {
-            const fn = originalFunctionSymbol in this ? this[originalFunctionSymbol] : this;
-            return prototypeApply.apply(fn, arguments);
-        }
-        function callHook() {
-            const fn = originalFunctionSymbol in this ? this[originalFunctionSymbol] : this;
-            return prototypeCall.apply(fn, arguments);
-        }
-        Function.prototype.apply = applyHook; // eslint-disable-line no-extend-native
-        Function.prototype.call = callHook; // eslint-disable-line no-extend-native
-
-        return function(fn, bind) {
-            let wrapperConstructorProxy;
-            const wrapper = function() {
-                let result;
-                if (this instanceof wrapper) {
-                    // some native constructor must absolutely be called using new (Array for instance)
-                    // se we can't use Object.create but we need to be able to pass arbitrary number of arguments
-                    // http://stackoverflow.com/questions/1606797/use-of-apply-with-new-operator-is-this-possible
-                    if (wrapperConstructorProxy === undefined) {
-                        wrapperConstructorProxy = function(args) {
-                            return fn.apply(this, args);
-                        };
-                        wrapperConstructorProxy.prototype = fn.prototype;
-                    }
-                    result = new wrapperConstructorProxy(arguments); // eslint-disable-line new-cap
-                } else if (arguments.length === 2) {
-                    result = fn.apply(bind, arguments);
-                } else {
-                    result = fn.apply(this, arguments);
-                }
-
-                return result;
-            };
-            wrapper[originalFunctionSymbol] = fn;
-            // au lieu du symbol ça pourrais marcher aussi
-            // wrapper.valueOf = function() {
-            //     return fn;
-            // };
-
-            return wrapper;
-        };
-    })();
 
     // include child
     (function() {
@@ -857,13 +810,6 @@ function createComposer() {
             return [];
         }
     );
-    // Function
-    touchValue.branch(
-        FunctionElement.asMatcher(),
-        function() {
-            return cloneFunction(this.value);
-        }
-    );
     // Boolean, Number, String, RegExp, Date, Error
     touchValue.branch(
         function() {
@@ -1067,6 +1013,102 @@ function createComposer() {
                 }
             });
         });
+    })();
+
+    /* ---------------- function behaviour -------------- */
+    (function() {
+        if (options.functionBehaviour === 'primitive') {
+            touchValue.branch(
+                FunctionElement.asMatcher(),
+                function() {
+                    return this.value;
+                }
+            );
+
+            FunctionElement.refine({
+                includeChild() {
+                    return false;
+                }
+            });
+        } else if (options.functionBehaviour === 'composite') {
+            const originalFunctionSymbol = Symbol();
+
+            if (options.bindMethodImplementation === 'relative') {
+                // https://gist.github.com/dmail/a593f694dfccb2a87bf926382cac998f
+                const prototypeApply = Function.prototype.apply;
+                const prototypeCall = Function.prototype.call;
+                prototypeApply.apply = prototypeApply;
+                prototypeCall.apply = prototypeApply;
+
+                Function.prototype.apply = function applyHook() { // eslint-disable-line no-extend-native
+                    const fn = originalFunctionSymbol in this ? this[originalFunctionSymbol] : this;
+                    return prototypeApply.apply(fn, arguments);
+                };
+                Function.prototype.call = function callHook() { // eslint-disable-line no-extend-native
+                    const fn = originalFunctionSymbol in this ? this[originalFunctionSymbol] : this;
+                    return prototypeCall.apply(fn, arguments);
+                };
+            }
+
+            // https://gist.github.com/dmail/6e639ac50cec8074a346c9e10e76fa65
+            const cloneFunction = function cloneFunction(fn, bind) {
+                let wrapperConstructorProxy;
+                const hasBinding = arguments.length > 1;
+                const wrapper = function() {
+                    let result;
+                    if (this instanceof wrapper) {
+                        // some native constructor must absolutely be called using new (Array for instance)
+                        // se we can't use Object.create but we need to be able to pass arbitrary number of arguments
+                        // http://stackoverflow.com/questions/1606797/use-of-apply-with-new-operator-is-this-possible
+                        if (wrapperConstructorProxy === undefined) {
+                            wrapperConstructorProxy = function(args) {
+                                return fn.apply(this, args);
+                            };
+                            wrapperConstructorProxy.prototype = fn.prototype;
+                        }
+                        result = new wrapperConstructorProxy(arguments); // eslint-disable-line new-cap
+                    } else if (hasBinding) {
+                        result = fn.apply(bind, arguments);
+                    } else {
+                        result = fn.apply(this, arguments);
+                    }
+
+                    return result;
+                };
+                wrapper[originalFunctionSymbol] = fn;
+                // au lieu du symbol ça pourrais marcher aussi
+                // wrapper.valueOf = function() {
+                //     return fn;
+                // };
+
+                return wrapper;
+            };
+
+            touchValue.branch(
+                FunctionElement.asMatcher(),
+                function(parentNode) {
+                    const fn = this.value;
+                    let clone;
+
+                    if (options.bindMethod && parentNode) {
+                        const ancestor = parentNode.parentNode;
+                        if (ancestor && ObjectElement.isPrototypeOf(ancestor)) {
+                            if (options.bindMethodImplementation === 'absolute') {
+                                clone = fn.bind(ancestor.value);
+                            } else if (options.bindMethodImplementation === 'relative') {
+                                clone = cloneFunction(fn, ancestor.value);
+                            }
+                        } else {
+                            clone = cloneFunction(fn);
+                        }
+                    } else {
+                        clone = cloneFunction(fn);
+                    }
+
+                    return clone;
+                }
+            );
+        }
     })();
 
     /* ---------------- countTracker ---------------- */
@@ -1393,6 +1435,8 @@ function createComposer() {
     return compose;
 }
 export default createComposer;
+export {createComposer as composer};
 
 const defaultComposer = createComposer();
+
 export {defaultComposer as compose};
