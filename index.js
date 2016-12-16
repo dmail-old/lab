@@ -1,7 +1,18 @@
 /*
 raf
 
-- limiter les nombres de fonctions exposée sur Element au minimum
+- pouvoir créer des composer custom en passant des options
+a-t-on besoin de recréer Element dans ce cas ?
+que fait-on lorsqu'un composer scan un élément d'un autre composer il apelle valueOf() ?
+
+- pouvoir modifier le comportement par défaut du composer sans parler des options
+genre en ajoutant des branches et des éléments, mettons si je souhaitais composer des objet customs genre immutable.js
+dans l'idée ce serais plutot simple c'est la même comportement que pour Map natif (même si on a pas encore le support pour cet objet)
+- constructor composition
+- éviter .children ou voir comment gérer ça parce qu'on va surement utiliser
+properties au lieu de children et on aurait aussi besoin de entries
+et properties sera une map et pas un tableau
+- nice to have : limiter les nombres de fonctions exposée sur Element au minimum
 autrement dit isIndexedProperty et tout ces trucs deviennent des fonctions pures utilisé comme helpers
 et tout ce qui est relatif aux propriété dans un objet genre pour éviter la multiplication de getProperty, hasProperty etc
 properties: {
@@ -11,6 +22,9 @@ properties: {
     get(name) {},
     set(name, value) {}
 }
+
+- jsenv/util/structure/definition.js contains many clue of missing features
+also replication.js in the same folder, section about Error line 594
 
 - ça serais bien, pour le plaisir et pour voir si on peut vraiment faire ce qu'on veut avec lab.js
 de faire une composer qui aurait le "même" comportement que stampit juste en utilisant ce qu'on a à disposition
@@ -62,89 +76,24 @@ par contre quand je fais
 -> les constructors sont appelé sr instance
 */
 
-import {Element, scan} from './src/lab.js';
+import {compose} from './src/lab.js';
 
-Element.refine({
-    asElement() {
-        // pointerNode will return the pointedElement
-        // doing ctrl+c & ctrl+v on a symlink on windows copy the symlinked file and not the symlink
-        return this;
-    }
-});
-
-Element.refine({
-    compose() {
-        let composite;
-        if (arguments.length === 0) {
-            let transformation = this.touch();
-            let product = transformation.produce();
-            composite = product;
-        } else {
-            let i = 0;
-            let j = arguments.length;
-            composite = this;
-            for (;i < j; i++) {
-                const arg = arguments[i];
-                let element;
-                if (Element.isPrototypeOf(arg)) {
-                    element = arg;
-                } else {
-                    element = scan(arg);
-                }
-                let transformation = composite.combine(element);
-                let product = transformation.produce();
-                composite = product;
-            }
-        }
-
-        return composite;
-    }
-});
-const pureElement = Element.create();
-const compose = pureElement.compose.bind(pureElement);
-
-export {compose};
-
-/*
-amélioration de unit test afin d'éviter le problème que lorsqu'on comment un module
-on a eslint qui dit cette variable n'est pas utilisé blah blah
-
-exports const test = {
-    modules: {
-        assert: '@node/assert',
-        scan: './lib/lab.js#scan'
-    },
-    main() {
-        this.add('test', function({assert, scan}) {
-
-        });
-
-        this.add({
-            modules: {
-                path: '@node/path'
-            },
-            main({assert, path}) {
-
-            }
-        })
-    }
-};
-*/
+export default compose;
 
 export const test = {
     modules: ['@node/assert'],
 
     main(assert) {
-        this.add('scan', function() {
-            this.add('scanning object', function() {
-                const object = {name: 'foo'};
-                const scanned = scan(object);
+        // this.add('scan', function() {
+        //     this.add('scanning object', function() {
+        //         const object = {name: 'foo'};
+        //         const scanned = scan(object);
 
-                assert.deepEqual(scanned.value, object);
-                // scan ne recréera pas l'objet mais doit réfléter son statut
-                // assert(scanned.value !== object);
-            });
-        });
+        //         assert.deepEqual(scanned.value, object);
+        //         // scan ne recréera pas l'objet mais doit réfléter son statut
+        //         // assert(scanned.value !== object);
+        //     });
+        // });
 
         this.add('compose', function() {
             this.add('compose object', function() {
@@ -152,14 +101,7 @@ export const test = {
                 const seb = {name: 'seb', item: {price: 10}, age: 10};
                 const expectedComposite = {name: 'seb', item: {name: 'sword', price: 10}, age: 10};
 
-                const damElement = scan(dam);
-                const sebElement = scan(seb);
-                const damValue = damElement.value;
-                const sebValue = sebElement.value;
-                assert.deepEqual(damValue, dam);
-                assert.deepEqual(sebValue, seb);
-
-                const compositeElement = damElement.compose(sebElement);
+                const compositeElement = compose(dam, seb);
                 const compositeValue = compositeElement.value;
                 assert.deepEqual(compositeValue, expectedComposite);
                 assert.deepEqual(dam, {name: 'dam', item: {name: 'sword'}}, 'compose does not mutate ingredients');
@@ -210,7 +152,7 @@ export const test = {
                     item: {},
                     values: [{}]
                 };
-                const composite = scan(object);
+                const composite = compose(object);
                 const model = composite.value;
                 const instance = composite.construct();
                 assertPrototype(instance, model);
@@ -230,25 +172,23 @@ export const test = {
                 expectedComposite.foo = damFriends.foo;
                 expectedComposite.bar = sandraFriends.bar;
 
-                const damFriendsElement = scan(damFriends);
-                const sandraFriendsElement = scan(sandraFriends);
-                const compositeFriendsElement = damFriendsElement.compose(sandraFriendsElement);
+                const compositeFriendsElement = compose(damFriends, sandraFriends);
                 const actualComposite = compositeFriendsElement.value;
 
                 assert.deepEqual(actualComposite, expectedComposite);
                 assert(actualComposite instanceof Array);
             });
 
-            this.add('scan + compose array', function() {
-                const array = [0, 1];
-                const arrayElement = scan(array);
-                const composedArray = arrayElement.compose();
-                const composite = composedArray.value;
+            // this.add('scan + compose array', function() {
+            //     const array = [0, 1];
+            //     const arrayElement = compose(array);
+            //     const composedArray = arrayElement.compose();
+            //     const composite = composedArray.value;
 
-                assert(arrayElement.value === array);
-                assert.deepEqual(composedArray.value, array);
-                assert(composite instanceof Array);
-            });
+            //     assert(arrayElement.value === array);
+            //     assert.deepEqual(composedArray.value, array);
+            //     assert(composite instanceof Array);
+            // });
 
             this.add('compose array', function() {
                 const array = [0, 1];
@@ -297,27 +237,27 @@ export const test = {
                 const object = {foo: true, 0: 1};
                 const arraylike = {1: 0, length: 1};
                 const element = compose(object, arraylike);
-                const composite = element.value;
+                const compositeValue = element.value;
 
-                assert(composite.length === 2);
-                assert(composite instanceof Array === false);
-                assert(element.getCountTrackerProperty().data.value === composite.length);
+                assert(compositeValue.length === 2);
+                assert(compositeValue instanceof Array === false);
+                assert(element.getCountTrackerProperty().data.value === compositeValue.length);
             });
 
             this.add('by arraylike', function() {
                 const object = {0: 1, length: 1};
-                const element = scan(object).compose();
-                const composite = element.value;
+                const element = compose(object);
+                const compositeValue = element.value;
 
-                assert(composite.length === 1);
-                assert(element.getCountTrackerProperty().data.value === composite.length);
+                assert(compositeValue.length === 1);
+                assert(element.getCountTrackerProperty().data.value === compositeValue.length);
             });
         });
 
         this.add('function', function() {
             this.add('function scan', function() {
                 const fn = function() {};
-                const element = scan(fn);
+                const element = compose(fn);
                 element.compose();
             });
 
@@ -325,9 +265,35 @@ export const test = {
                 const obj = {
                     fn() {}
                 };
-                const element = scan(obj);
+                const element = compose(obj);
                 element.compose();
             });
         });
     }
 };
+
+/*
+amélioration de unit test afin d'éviter le problème que lorsqu'on comment un module
+on a eslint qui dit cette variable n'est pas utilisé blah blah
+
+exports const test = {
+    modules: {
+        assert: '@node/assert',
+        scan: './lib/lab.js#scan'
+    },
+    main() {
+        this.add('test', function({assert, scan}) {
+
+        });
+
+        this.add({
+            modules: {
+                path: '@node/path'
+            },
+            main({assert, path}) {
+
+            }
+        })
+    }
+};
+*/
