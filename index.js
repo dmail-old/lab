@@ -1,7 +1,17 @@
 /*
 raf
 
-- une fois qu'on a tout ça on pousuis l'implémentation des examples
+- limiter les nombres de fonctions exposée sur Element au minimum
+autrement dit isIndexedProperty et tout ces trucs deviennent des fonctions pures utilisé comme helpers
+et tout ce qui est relatif aux propriété dans un objet genre pour éviter la multiplication de getProperty, hasProperty etc
+properties: {
+    data: {
+        foo: true
+    },
+    get(name) {},
+    set(name, value) {}
+}
+
 - ça serais bien, pour le plaisir et pour voir si on peut vraiment faire ce qu'on veut avec lab.js
 de faire une composer qui aurait le "même" comportement que stampit juste en utilisant ce qu'on a à disposition
 par "même comportement" j'entends un truc genre

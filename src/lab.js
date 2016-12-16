@@ -248,16 +248,8 @@ const NumberElement = ObjectElement.extend('Number', createConstructedByProperti
 const StringElement = ObjectElement.extend('String', createConstructedByProperties(String));
 const RegExpElement = ObjectElement.extend('RegExp', createConstructedByProperties(RegExp));
 const DateElement = ObjectElement.extend('Date', createConstructedByProperties(Date));
-// handle function as primitive because perf
-const FunctionElement = ObjectElement.extend('Function',
-    createConstructedByProperties(Function),
-    PrimitiveProperties
-);
-// handle error as primitive because hard to preserve stack property
-const ErrorElement = ObjectElement.extend('Error',
-    createConstructedByProperties(Error),
-    PrimitiveProperties
-);
+const FunctionElement = ObjectElement.extend('Function', createConstructedByProperties(Function));
+const ErrorElement = ObjectElement.extend('Error', createConstructedByProperties(Error));
 // to add : MapElement, MapEntryElement, SetElement, SetEntryElement
 export {
     ObjectElement,
@@ -412,7 +404,7 @@ scanValue.preferBranch(
 );
 
 function cloneFunction(fn) {
-    // a true clone must handle new  https://gist.github.com/dmail/6e639ac50cec8074a346c9e10e76fa65
+    // a true clone must handle new https://gist.github.com/dmail/6e639ac50cec8074a346c9e10e76fa65
     return function() {
         return fn.apply(this, arguments);
     };
@@ -863,26 +855,6 @@ touchValue.branch(
         return PropertyDefinition.create(this.value.name);
     }
 );
-// this case happens with array length property
-// or function name property, in that case we preserve the current property of the compositeObject
-// -> à supprimer on laissera ceci se produire, à la limite on mettra un warning
-// mais on va par contre lister les cas où ça peut se produire et éviter l'erreur
-// array length c'est déjà fait pour function.name ça dépend de l'environement
-// donc on test et si besoin on empêche les noms de fonction d'écraser l'existant
-combineValue.branch(
-    function(otherElement, parentNode) {
-        // console.log('own property is not configurable, cannot make it react');
-        return (
-            PropertyElement.isPrototypeOf(this) &&
-            this.parentNode === parentNode &&
-            this.canConfigure() === false
-        );
-    },
-    function() {
-        console.warn('prevent transformation because property is not configurable');
-        throw CancelTransformation;
-    }
-);
 // pure element used otherElement touched value
 combineValue.branch(
     Element.asMatcherStrict(),
@@ -1001,6 +973,64 @@ instantiateValue.branch(
 //         Object.freeze(this.value);
 //     }
 // );
+
+/* ---------------- natively unconfigurable properties -------------- */
+(function() {
+    const debug = !true;
+
+    // selon le moteur javaScript certaines propriétés sont à configurable: false
+    // lorsque l'objet est créé
+    // on peut noter principalement Array.prototype.length, Function.prototype.length, Function.prototype.name
+    // mais il y en a potentiellement d'autres
+    // toutes ces propriétées ne peuvent être redéfinies et restent donc sur l'objet
+
+    function isConfigurable(object, property) {
+        const propertyDescriptor = Object.getOwnPropertyDescriptor(object, property);
+        return propertyDescriptor.configurable === true;
+    }
+    function cancelTransformation() {
+        if (debug) {
+            console.warn('cancel transformation of', this.name, 'property (natively not configurable)');
+        }
+        throw CancelTransformation;
+    }
+
+    [
+        ObjectElement,
+        ArrayElement,
+        BooleanElement,
+        NumberElement,
+        StringElement,
+        RegExpElement,
+        DateElement,
+        FunctionElement,
+        ErrorElement
+    ].forEach(function(CompositeElement) {
+        const testValue = new CompositeElement.valueConstructor(); // eslint-disable-line new-cap
+
+        Object.getOwnPropertyNames(testValue).forEach(function(name) {
+            if (isConfigurable(testValue, name) === false) {
+                if (debug) {
+                    console.warn(name, 'property is natively not configurable on', CompositeElement.tagName);
+                }
+
+                combineValue.preferBranch(
+                    function() {
+                        return (
+                            PropertyElement.isPrototypeOf(this) &&
+                            this.name === name &&
+                            this.parentNode &&
+                            CompositeElement.isPrototypeOf(this.parentNode)
+                        );
+                    },
+                    cancelTransformation
+                );
+                // faut-il aussi touchValue.preferBranch ?
+                // je crois que oui
+            }
+        });
+    });
+})();
 
 /* ---------------- countTracker ---------------- */
 (function() {
@@ -1178,26 +1208,6 @@ instantiateValue.branch(
         },
         function(otherElement, destinationParentNode) {
             return getIndexedPropertyCount(destinationParentNode.parentNode);
-        }
-    );
-
-    // this case exists because array length property is not configurable
-    // because of that we cannot redefine it when composing array with arraylike
-    // so when there is a already a length property assume it's in sync
-    combineValue.preferBranch(
-        function() {
-            return (
-                this.name === 'length' &&
-                PropertyElement.isPrototypeOf(this) &&
-                this.parentNode &&
-                ArrayElement.isPrototypeOf(this.parentNode)
-            );
-        },
-        function() {
-            if (debug) {
-                console.log('cancel current array length transformation');
-            }
-            throw CancelTransformation;
         }
     );
 })();
