@@ -90,7 +90,8 @@ var construct = (function() {
 })();
 
 var proto = {
-    // [tagSymbol]: '',
+    tagSymbol: tagSymbol,
+
     constructor() {
 
     },

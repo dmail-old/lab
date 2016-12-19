@@ -94,7 +94,7 @@ function createComposer(customOptions = {}) {
         }
     });
 
-    const Element = Node.extend({
+    const Element = Node.extend('Element', {
         extend(tagName, ...args) {
             const Element = util.extend.apply(this, args);
             Element.tagName = tagName;
@@ -325,10 +325,10 @@ function createComposer(customOptions = {}) {
         }
 
         let primitiveValue;
-        if (value === null || value === undefined) {
-            primitiveValue = value;
-        } else {
+        if (value !== null && value !== undefined && value[util.tagSymbol] === 'Element') {
             primitiveValue = value.valueOf();
+        } else {
+            primitiveValue = value;
         }
 
         const product = Lab.findElementByValueMatch(primitiveValue).create();
@@ -1411,13 +1411,16 @@ function createComposer(customOptions = {}) {
         instantiate,
         construct() {
             const instantiatedComposite = this.instantiate().produce();
-            const instantiatedValue = instantiatedComposite.value;
+            let instantiatedValue = instantiatedComposite.value;
 
             if (ObjectElement.isPrototypeOf(this)) {
                 const constructorProperty = this.getProperty('constructor');
 
                 if (constructorProperty) {
-                    constructorProperty.data.value.apply(instantiatedValue, arguments);
+                    instantiatedValue = instanceOrConstructorReturnValue(
+                        instantiatedValue,
+                        constructorProperty.data.value.apply(instantiatedValue, arguments)
+                    );
                 }
             }
 

@@ -1,16 +1,15 @@
 /*
+
+https://github.com/stampit-org/stamp-specification#stamp-arguments
+
 raf
 
 composable immutable class/prototype
 
-- pouvoir créer des composer custom en passant des options
-a-t-on besoin de recréer Element dans ce cas ?
-que fait-on lorsqu'un composer scan un élément d'un autre composer il apelle valueOf() ?
-
 - pouvoir modifier le comportement par défaut du composer sans parler des options
 genre en ajoutant des branches et des éléments, mettons si je souhaitais composer des objet customs genre immutable.js
 dans l'idée ce serais plutot simple c'est la même comportement que pour Map natif (même si on a pas encore le support pour cet objet)
-- constructor composition
+
 - éviter .children ou voir comment gérer ça parce qu'on va surement utiliser
 properties au lieu de children et on aurait aussi besoin de entries
 et properties sera une map et pas un tableau
@@ -313,7 +312,7 @@ export const test = {
                     constructor: secondSpy
                 });
                 const args = [true];
-                const instance = composite.construct();
+                const instance = composite.construct.apply(composite, args);
                 const firstSpyLastCall = firstSpy.lastCall;
                 const secondSpyLastCall = secondSpy.lastCall;
 
@@ -322,12 +321,59 @@ export const test = {
                 assert(firstSpyLastCall.id < secondSpyLastCall.id);
                 assert(firstSpyLastCall.this === instance);
                 assert(secondSpyLastCall.this === instance);
-                assert.deepEqual(firstSpyLastCall.args, args);
-                assert.deepEqual(secondSpyLastCall.args, args);
+                assert.deepEqual(Array.from(firstSpyLastCall.args), args);
+                assert.deepEqual(Array.from(secondSpyLastCall.args), args);
             });
 
-            // vérifier avec trois constructeur et aussi que si on retourne kkchose dans le constructeur l'instance est modifié
-        }).skip('later');
+            this.add('chained + return override', function() {
+                const firstSpy = spy();
+                const secondSpy = spy(function() {
+                    return {};
+                });
+                const thirdSpy = spy();
+                const composite = compose({
+                    constructor: firstSpy
+                }).compose({
+                    constructor: secondSpy
+                }).compose({
+                    constructor: thirdSpy
+                });
+                const instance = composite.construct();
+                const secondSpyLastCall = secondSpy.lastCall;
+                const thirdSpyLastCall = thirdSpy.lastCall;
+
+                assert(thirdSpyLastCall.this === secondSpyLastCall.return);
+                assert(instance === secondSpyLastCall.return);
+            });
+        });
+
+        this.add('composer communication', function() {
+            const value = {foo: true};
+            const composeSpecial = composer();
+            const normalComposite = compose(value);
+            const specialComposite = composeSpecial(normalComposite);
+
+            assert.deepEqual(specialComposite.value, normalComposite.value);
+            assert(specialComposite.value !== normalComposite.value);
+        });
+
+        this.add('augment existing object', function() {
+            // https://github.com/stampit-org/stampit/issues/153
+            const object = {item: {name: 'sword'}};
+            const composite = compose({item: {price: 100}, foo: true});
+            composite.augment(object);
+            assert(object.item.name === 'sword');
+            assert(object.item.price === 100);
+            assert(object.foo === true);
+
+            // comment obtenir ça? je suppose
+            // qu'un scan(object).compose(composite) esu suffisant
+            // le seul "problème" c'est que dans ce cas précis le compose
+            // ne dois pas être immutable
+            // sinon on pourrais écrire comme ça : scan(object).compose(composite).value
+            // et on aurais le résultat attendu
+            // je dis : ne favorisons pas une API mutable
+        }).skip('avoid mutability');
     }
 };
 
