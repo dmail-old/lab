@@ -1,6 +1,8 @@
 /*
 raf
 
+composable immutable class/prototype
+
 - pouvoir créer des composer custom en passant des options
 a-t-on besoin de recréer Element dans ce cas ?
 que fait-on lorsqu'un composer scan un élément d'un autre composer il apelle valueOf() ?
@@ -84,17 +86,6 @@ export const test = {
     modules: ['@node/assert'],
 
     main(assert) {
-        // this.add('scan', function() {
-        //     this.add('scanning object', function() {
-        //         const object = {name: 'foo'};
-        //         const scanned = scan(object);
-
-        //         assert.deepEqual(scanned.value, object);
-        //         // scan ne recréera pas l'objet mais doit réfléter son statut
-        //         // assert(scanned.value !== object);
-        //     });
-        // });
-
         this.add('compose', function() {
             this.add('compose object', function() {
                 const dam = {name: 'dam', item: {name: 'sword'}};
@@ -290,11 +281,61 @@ export const test = {
                 assert(instance !== compositeValue, 'method thisValue is value passed by js engine on new keyword');
             });
         });
+
+        this.add('constructor composition', function() {
+            var callId = 0;
+            function spy(fn) {
+                let lastCall = {
+                    called: false
+                };
+                function spyFn() {
+                    lastCall.this = this;
+                    lastCall.args = arguments;
+                    lastCall.id = callId;
+                    lastCall.called = true;
+                    callId++;
+
+                    if (fn) {
+                        lastCall.return = fn.apply(this, arguments);
+                        return lastCall.return;
+                    }
+                }
+                spyFn.lastCall = lastCall;
+                return spyFn;
+            }
+
+            this.add('basic', function() {
+                const firstSpy = spy();
+                const secondSpy = spy();
+                const composite = compose({
+                    constructor: firstSpy
+                }, {
+                    constructor: secondSpy
+                });
+                const args = [true];
+                const instance = composite.construct();
+                const firstSpyLastCall = firstSpy.lastCall;
+                const secondSpyLastCall = secondSpy.lastCall;
+
+                assert(firstSpyLastCall.called);
+                assert(secondSpyLastCall.called);
+                assert(firstSpyLastCall.id < secondSpyLastCall.id);
+                assert(firstSpyLastCall.this === instance);
+                assert(secondSpyLastCall.this === instance);
+                assert.deepEqual(firstSpyLastCall.args, args);
+                assert.deepEqual(secondSpyLastCall.args, args);
+            });
+
+            // vérifier avec trois constructeur et aussi que si on retourne kkchose dans le constructeur l'instance est modifié
+        }).skip('later');
     }
 };
 
 /*
-amélioration de unit test afin d'éviter le problème que lorsqu'on comment un module
+- chaque test à une méthode skip() ben ajouter aussi une méthode skipOthers pour en gros ne faire que celui la
+de sorte que lorsqu'on test un seul truc on a pas les autres tests qui interfère
+
+- amélioration de unit test afin d'éviter le problème que lorsqu'on comment un module
 on a eslint qui dit cette variable n'est pas utilisé blah blah
 
 exports const test = {

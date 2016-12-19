@@ -887,6 +887,38 @@ function createComposer(customOptions = {}) {
         }
     );
     // Function
+    function instanceOrConstructorReturnValue(instance, returnValue) {
+        if (returnValue === null) {
+            return instance;
+        }
+        if (typeof returnValue === 'object') {
+            return returnValue;
+        }
+        return instance;
+    }
+    combineValue.branch(
+        function(otherElement, parentNode) {
+            return (
+                FunctionElement.isPrototypeOf(this) &&
+                FunctionElement.isPrototypeOf(otherElement) &&
+                this.name === 'value' &&
+                PropertyElement.isPrototypeOf(parentNode) &&
+                parentNode.name === 'constructor'
+            );
+        },
+        function(otherConstructor) {
+            const firstConstructor = this.value;
+            const secondConstructor = otherConstructor.value;
+            return function combinedConstructor() {
+                let instance = this;
+                const firstConstructorReturnValue = firstConstructor.apply(instance, arguments);
+                instance = instanceOrConstructorReturnValue(instance, firstConstructorReturnValue);
+                const secondConstructorReturnValue = secondConstructor.apply(instance, arguments);
+                instance = instanceOrConstructorReturnValue(instance, secondConstructorReturnValue);
+                return instance;
+            };
+        }
+    );
     combineValue.branch(
         FunctionElement.asMatcher(),
         function(parentNode) {
@@ -997,19 +1029,36 @@ function createComposer(customOptions = {}) {
                         console.warn(name, 'property is natively not configurable on', CompositeElement.tagName);
                     }
 
+                    const isUnconfigurableProperty = function(element) {
+                        return (
+                            PropertyElement.isPrototypeOf(element) &&
+                            element.name === name &&
+                            element.parentNode &&
+                            CompositeElement.isPrototypeOf(element.parentNode)
+                        );
+                    };
+
                     combineValue.preferBranch(
                         function() {
+                            return isUnconfigurableProperty(this);
+                        },
+                        cancelTransformation
+                    );
+                    touchValue.preferBranch(
+                        function(parentNode) {
                             return (
-                                PropertyElement.isPrototypeOf(this) &&
-                                this.name === name &&
-                                this.parentNode &&
-                                CompositeElement.isPrototypeOf(this.parentNode)
+                                (
+                                    this.parentNode === parentNode || (
+                                        parentNode &&
+                                        CompositeElement.isPrototypeOf(parentNode) &&
+                                        parentNode.hasProperty(name)
+                                    )
+                                ) &&
+                                isUnconfigurableProperty(this)
                             );
                         },
                         cancelTransformation
                     );
-                    // faut-il aussi touchValue.preferBranch ?
-                    // je crois que oui
                 }
             });
         });
