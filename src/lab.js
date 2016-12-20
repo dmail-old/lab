@@ -1,6 +1,7 @@
 /* eslint-disable no-use-before-define */
 
 /*
+- https://github.com/stampit-org/stamp-specification#stamp-arguments
 - continuer l'implémentation d'exemple pour s'assurer de comportement de compose
 avec des cas concrêt
 - la communication inter composer doit tenir compte de element.origin & firstComponent/secondComponent
@@ -14,6 +15,9 @@ avec des cas concrêt
 - un jour, pour la 2.0 de ce module, améliorer la manière dont le code s'articule pour permettre
 une extensibilté facilité de sorte que par défaut ce module ne fais rien
 et ensuite on y ajoute les fonctionnalités dont on a besoin à la manière de babel
+- jsenv/util/structure/definition.js contains many clue of missing features
+also replication.js in the same folder, section about Error line 594
+
 */
 
 import util from './util.js';
