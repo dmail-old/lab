@@ -1,13 +1,28 @@
 /* eslint-disable no-use-before-define */
 
+/*
+- continuer l'implémentation d'exemple pour s'assurer de comportement de compose
+avec des cas concrêt
+- .children devient .properties avec des méthodes associées
+- MapElement, MapEntry etc avec .entries
+- SetElement, SetEntry
+- immutablejs option pour merger les immutable Map, etc
+- stampit composer pour le challenge de réussir à le faire
+- V1.0 atteinte quand ces fonctionnalitées seront présente
+- repasser sur jsenv
+- un jour, pour la 2.0 de ce module, améliorer la manière dont le code s'articule pour permettre
+une extensibilté facilité de sorte que par défaut ce module ne fais rien
+et ensuite on y ajoute les fonctionnalités dont on a besoin à la manière de babel
+*/
+
 import util from './util.js';
 import polymorph from './polymorph.js';
 import Node from './node.js';
 
 const defaultOptions = {
-    functionBehaviour: 'primitive',
-    bindMethod: false,
-    bindMethodImplementation: 'absolute',
+    functionBehaviour: 'composite',
+    bindMethod: true,
+    bindMethodImplementation: 'relative',
     concatArray: true,
     concatArrayLike: true,
     syncArrayLikeLength: true
@@ -345,6 +360,8 @@ function createComposer(customOptions = {}) {
         return product;
     };
     function scanProperties(propertyNames, element) {
+        // console.log('scanning', element.path, 'properties:', propertyNames);
+
         const value = element.value;
         for (let name of propertyNames) {
             const descriptor = Object.getOwnPropertyDescriptor(value, name);
@@ -365,12 +382,25 @@ function createComposer(customOptions = {}) {
         function() {
             const value = this.value;
             const descriptor = value.descriptor;
-            Object.keys(descriptor).forEach(function(key) {
-                const descriptorPropertyValue = descriptor[key];
-                const descriptorProperty = scanProduct(descriptorPropertyValue, key);
+            const descriptorPropertyNames = Object.keys(descriptor);
+
+            // console.log('scanning', this.path, 'descriptor properties:', descriptorPropertyNames);
+            // if (descriptorPropertyNames.length === 0) {
+            //     console.log(
+            //         this.path,
+            //         'descriptor is strange',
+            //         descriptor,
+            //         'for property', this.name,
+            //         'on value', this.parentNode.value
+            //     );
+            // }
+
+            for (let descriptorPropertyName of descriptorPropertyNames) {
+                const descriptorPropertyValue = descriptor[descriptorPropertyName];
+                const descriptorProperty = scanProduct(descriptorPropertyValue, descriptorPropertyName);
                 this.appendChild(descriptorProperty);
                 descriptorProperty.scanValue();
-            }, this);
+            }
         }
     );
     // disable function.prototype.constructor property discoverability to prevent infinite recursion
@@ -390,7 +420,7 @@ function createComposer(customOptions = {}) {
             );
         },
         function() {
-            // when scanning a function prototype object omit the constructor property to prevent infinit recursion
+            // when scanning a function prototype object omit the constructor property to prevent infinite recursion
             scanProperties(Object.getOwnPropertyNames(this.value).filter(function(name) {
                 return name !== 'constructor';
             }), this);
@@ -660,13 +690,18 @@ function createComposer(customOptions = {}) {
         },
 
         transform(touchedValue, elementModel) {
-            return scanProduct(touchedValue, elementModel.name);
+            const product = scanProduct(touchedValue, elementModel.name);
+            product.origin = elementModel;
+            return product;
         },
 
         fill(product, elementModel) {
             product.scanValue();
             const remainingChildren = combineChildren(elementModel, product);
             for (let child of remainingChildren) {
+                // if (PropertyElement.isPrototypeOf(product)) {
+                //     console.log('set descriptor property', product.path + '.' + child.name, '=', child.value);
+                // }
                 child.touch(product).produce();
             }
         }
@@ -688,7 +723,7 @@ function createComposer(customOptions = {}) {
             // je rapelle qu'idéalement une valeur ne DOIT pas savoir de qu'elle propriété elle provient
             // les objet propriétés ne sont donc pas des éléments comme les autres
             // ils forments le lien entre deux valeurs mais ne sont pas des valeur
-            let product = scanProduct(combinedValue, firstElement.name);
+            const product = scanProduct(combinedValue, firstElement.name);
             product.firstComponent = firstElement;
             product.secondComponent = secondElement;
             return product;
@@ -907,9 +942,9 @@ function createComposer(customOptions = {}) {
             );
         },
         function(otherConstructor) {
-            const firstConstructor = this.value;
-            const secondConstructor = otherConstructor.value;
-            return function combinedConstructor() {
+            const firstConstructor = this.asOrigin().value;
+            const secondConstructor = otherConstructor.asOrigin().value;
+            const combinedConstructor = function combinedConstructor() {
                 let instance = this;
                 const firstConstructorReturnValue = firstConstructor.apply(instance, arguments);
                 instance = instanceOrConstructorReturnValue(instance, firstConstructorReturnValue);
@@ -917,6 +952,8 @@ function createComposer(customOptions = {}) {
                 instance = instanceOrConstructorReturnValue(instance, secondConstructorReturnValue);
                 return instance;
             };
+
+            return combinedConstructor;
         }
     );
     combineValue.branch(
@@ -940,19 +977,30 @@ function createComposer(customOptions = {}) {
         }
     );
     instantiateValue.branch(
+        FunctionElement.asMatcher(),
+        function(parentNode) {
+            // except constructor non?
+            // pour constructor on peut laisser le constructeur, je dirais même qu'il faut
+            return this.touchValue(parentNode);
+        }
+    );
+    instantiateValue.branch(
         ObjectElement.asMatcher(),
         function() {
-            // console.log('Object.create at', this.path);
             return Object.create(this.value);
         }
     );
-    // delegate property which hold primitives
+    // delegate property which hold primitives and constructor
     instantiateValue.branch(
         function() {
             return (
                 PropertyElement.isPrototypeOf(this) &&
-                this.isData() &&
-                this.data.primitiveMark
+                this.isData() && (
+                    this.data.primitiveMark || (
+                        this.name === 'constructor' &&
+                        FunctionElement.isPrototypeOf(this.data)
+                    )
+                )
             );
         },
         function() {
@@ -1082,21 +1130,26 @@ function createComposer(customOptions = {}) {
         } else if (options.functionBehaviour === 'composite') {
             const originalFunctionSymbol = Symbol();
 
+            // un autre moyen d'obtenir un binding "relatif"
+            // serais d'avoir une méthode .callForce qui appele la fonction d'origine
+            // ou alors d'avoir un valueOf qui retourne la fonction d'origine
+            // et donc je ferais function.valueOf().call
+            // au lieu de réécrire .apply & .call
             if (options.bindMethodImplementation === 'relative') {
                 // https://gist.github.com/dmail/a593f694dfccb2a87bf926382cac998f
-                const prototypeApply = Function.prototype.apply;
-                const prototypeCall = Function.prototype.call;
-                prototypeApply.apply = prototypeApply;
-                prototypeCall.apply = prototypeApply;
+                // const prototypeApply = Function.prototype.apply;
+                // const prototypeCall = Function.prototype.call;
+                // prototypeApply.apply = prototypeApply;
+                // prototypeCall.apply = prototypeApply;
 
-                Function.prototype.apply = function applyHook() { // eslint-disable-line no-extend-native
-                    const fn = originalFunctionSymbol in this ? this[originalFunctionSymbol] : this;
-                    return prototypeApply.apply(fn, arguments);
-                };
-                Function.prototype.call = function callHook() { // eslint-disable-line no-extend-native
-                    const fn = originalFunctionSymbol in this ? this[originalFunctionSymbol] : this;
-                    return prototypeCall.apply(fn, arguments);
-                };
+                // Function.prototype.apply = function applyHook() { // eslint-disable-line no-extend-native
+                //     const fn = originalFunctionSymbol in this ? this[originalFunctionSymbol] : this;
+                //     return prototypeApply.apply(fn, arguments);
+                // };
+                // Function.prototype.call = function callHook() { // eslint-disable-line no-extend-native
+                //     const fn = originalFunctionSymbol in this ? this[originalFunctionSymbol] : this;
+                //     return prototypeCall.apply(fn, arguments);
+                // };
             }
 
             // https://gist.github.com/dmail/6e639ac50cec8074a346c9e10e76fa65
@@ -1124,11 +1177,6 @@ function createComposer(customOptions = {}) {
 
                     return result;
                 };
-                wrapper[originalFunctionSymbol] = fn;
-                // au lieu du symbol ça pourrais marcher aussi
-                // wrapper.valueOf = function() {
-                //     return fn;
-                // };
 
                 return wrapper;
             };
@@ -1142,17 +1190,39 @@ function createComposer(customOptions = {}) {
                     if (options.bindMethod && parentNode) {
                         const ancestor = parentNode.parentNode;
                         if (ancestor && ObjectElement.isPrototypeOf(ancestor)) {
-                            if (options.bindMethodImplementation === 'absolute') {
-                                clone = fn.bind(ancestor.value);
-                            } else if (options.bindMethodImplementation === 'relative') {
-                                clone = cloneFunction(fn, ancestor.value);
-                            }
+                            clone = fn.bind(ancestor.value);
                         } else {
                             clone = cloneFunction(fn);
                         }
                     } else {
                         clone = cloneFunction(fn);
                     }
+
+                    clone[originalFunctionSymbol] = fn;
+                    // dans le cas où la fonction est déjà cloné on a un problème parce que
+                    // fn à déjà un valueOf qui va prévaloir au moment où on va combineProperties
+                    // sur ce qu'on retourne ici
+                    // et ce valueOf se fait écraser par l'actuel fn.valueOf
+                    // le truc c'est qu'il "faudrais" tous les garder où en tous cas garder au moins le dernier
+                    // c'est à dire celui ci-dessous
+                    // en plus on a le souci dans scanProduct qui est que on apelle valueOf
+                    // pour trouverquel est la valeur à scanné
+                    /*
+                    j'ai donc l'impression qu'il faut un moyen de refléter d'où provient la valeur
+                    quelque chose comme
+
+                    value[origin] = parentValue;
+                    parentValue[origin] = ancestorValue;
+                    ancestorValue[origin] = rootValue;
+
+                    et lorsqu'on rencotnre kk chose comme ça on recré la valeur
+                    sachant qu'une valeur peut avoir 1 seule origine (touch)
+                    mais aussi en avoir deux (combine)
+                    c'est le pendant de firstComponent & secondComponent
+                    */
+                    clone.valueOf = function() {
+                        return fn;
+                    };
 
                     return clone;
                 }
@@ -1417,9 +1487,16 @@ function createComposer(customOptions = {}) {
                 const constructorProperty = this.getProperty('constructor');
 
                 if (constructorProperty) {
+                    // constructor est une méthode comme les autres
+                    // et se retrouve donc "bind" à son objet
+                    // hors on veut pouvoir l'apeller sur instantiatedValue
+                    // d'où le valueOf pour récuprer le constructeur d'origine
+                    const constructor = constructorProperty.data.asOrigin().value;
+                    // console.log('calling', constructor, 'on', instantiatedValue);
+                    const constructorReturnValue = constructor.apply(instantiatedValue, arguments);
                     instantiatedValue = instanceOrConstructorReturnValue(
                         instantiatedValue,
-                        constructorProperty.data.value.apply(instantiatedValue, arguments)
+                        constructorReturnValue
                     );
                 }
             }
@@ -1433,6 +1510,13 @@ function createComposer(customOptions = {}) {
         asElement() {
             // pointerNode will return the pointedElement
             // doing ctrl+c & ctrl+v on a symlink on windows copy the symlinked file and not the symlink
+            return this;
+        },
+
+        asOrigin() {
+            if (this.hasOwnProperty('origin')) {
+                return this.origin.asOrigin();
+            }
             return this;
         }
     });

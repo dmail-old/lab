@@ -1,14 +1,81 @@
 /*
 
+composable immutable class/prototype
+
 https://github.com/stampit-org/stamp-specification#stamp-arguments
 
 raf
 
-composable immutable class/prototype
-
 - pouvoir modifier le comportement par défaut du composer sans parler des options
 genre en ajoutant des branches et des éléments, mettons si je souhaitais composer des objet customs genre immutable.js
 dans l'idée ce serais plutot simple c'est la même comportement que pour Map natif (même si on a pas encore le support pour cet objet)
+
+j'avais pensé à un truc assez chiadé genre
+
+const compose = composer();
+
+compose.plugins; // list de plugin qui définissent le comportement de compose
+// on pourrait aussi l'apeller behaviour, impelmentation, components
+// un plugin c'est super simple c'est juste une list de cas nommés genre
+
+const concatPlugin = {
+    compose: [
+        function() {}, // if ca
+        function() {}, // do ça
+    ]
+    instantiate: [
+        function() {}, // if ça
+        function() {}, // do ça
+    ]
+};
+
+ensuite on peut ajouter/supprimer des plugins dynamiquement même une fois le composer créé
+les options ne servent qu'à préconfigurer certains plugins
+
+si par exemple on souhait ajouter immutablejs on auras "juste" à faire
+il manque match ici
+
+ImmutableJSPlugin = {
+    touchValue: [
+        function() {
+            // si la valeur est une instance de immutablejs
+        },
+        function() {
+            // y'a juste rien à faire
+        }
+    ],
+    combineValue: [
+        function() {}, // if imutableJS instance
+        function() {
+            // mergeDeep both imutable js objects (if possible not sure Set & Map can be merged)
+        }
+    ]
+};
+
+je ne suis pas sur qu'on ait vraiment besoin de créer un MapSequenceElement enfin faut voir
+en tous cas comme on peut le voir il manque cet aspect, comment faire pour avoir un comportement
+spécifique selon la valeur ?
+
+est ce qu'on pourrait faire ça :
+
+plugins = [];
+const Plugin = util.extend({
+    constructor(is, properties) {
+        this.is = is;
+        this.properties = properties;
+    }
+});
+ensuite bah lorsque le plugin is() match on récup properties et on s'en sers
+pour fair een sorte que les propriétés de ce plugin s'applique
+ça donne donc
+
+const Element = util.extend();
+Element.match = function() {
+    // on parcoure tous les plugins et on instancie le bon
+};
+
+// bon attends y'a le concept de plugin et celui des éléments
+// c'est juste qu'il faut permettre à du code externe de créer des éléments
 
 - éviter .children ou voir comment gérer ça parce qu'on va surement utiliser
 properties au lieu de children et on aurait aussi besoin de entries
@@ -275,7 +342,7 @@ export const test = {
 
                 assert(compositeValue.method() === compositeValue, 'method thisValue is owner when attached');
                 assert(compositeValueMethod() === compositeValue, 'method thisValue is owner when detached');
-                assert(compositeValueMethod.call(10) === 10, 'method thisValue is value passed to .call()');
+                assert(compositeValueMethod.valueOf().call(10) === 10, 'method thisValue is value passed to .call()');
                 const instance = new compositeValueMethod(); // eslint-disable-line new-cap
                 assert(instance !== compositeValue, 'method thisValue is value passed by js engine on new keyword');
             });
@@ -302,10 +369,15 @@ export const test = {
                 spyFn.lastCall = lastCall;
                 return spyFn;
             }
+            // faudrais un truc pour dire que les spy ne doivent pas être "cloné"
+            // ça marche quand même parce que c'est une fois cloné que lastCall est mutate
+            // mais bon
 
             this.add('basic', function() {
                 const firstSpy = spy();
                 const secondSpy = spy();
+                const firstSpyLastCall = firstSpy.lastCall;
+                const secondSpyLastCall = secondSpy.lastCall;
                 const composite = compose({
                     constructor: firstSpy
                 }, {
@@ -313,8 +385,6 @@ export const test = {
                 });
                 const args = [true];
                 const instance = composite.construct.apply(composite, args);
-                const firstSpyLastCall = firstSpy.lastCall;
-                const secondSpyLastCall = secondSpy.lastCall;
 
                 assert(firstSpyLastCall.called);
                 assert(secondSpyLastCall.called);
