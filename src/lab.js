@@ -3,6 +3,7 @@
 /*
 - continuer l'implémentation d'exemple pour s'assurer de comportement de compose
 avec des cas concrêt
+- la communication inter composer doit tenir compte de element.origin & firstComponent/secondComponent
 - .children devient .properties avec des méthodes associées
 - MapElement, MapEntry etc avec .entries
 - SetElement, SetEntry
@@ -979,8 +980,6 @@ function createComposer(customOptions = {}) {
     instantiateValue.branch(
         FunctionElement.asMatcher(),
         function(parentNode) {
-            // except constructor non?
-            // pour constructor on peut laisser le constructeur, je dirais même qu'il faut
             return this.touchValue(parentNode);
         }
     );
@@ -1184,7 +1183,7 @@ function createComposer(customOptions = {}) {
             touchValue.branch(
                 FunctionElement.asMatcher(),
                 function(parentNode) {
-                    const fn = this.value;
+                    const fn = this.asOrigin().value;
                     let clone;
 
                     if (options.bindMethod && parentNode) {
@@ -1220,9 +1219,9 @@ function createComposer(customOptions = {}) {
                     mais aussi en avoir deux (combine)
                     c'est le pendant de firstComponent & secondComponent
                     */
-                    clone.valueOf = function() {
-                        return fn;
-                    };
+                    // clone.valueOf = function() {
+                    //     return fn;
+                    // };
 
                     return clone;
                 }

@@ -45,6 +45,6 @@ const HelloTemplate = compose({
 });
 
 const damTemplate = HelloTemplate.construct({name: 'dam'});
-console.log(damTemplate.toString()); // 'Hello DAM!'
+console.log('dam:', damTemplate.toString()); // 'Hello DAM!'
 const sebTemplate = HelloTemplate.construct({name: 'seb'});
-console.log(sebTemplate.toString()); // 'Hello SEB!'
+console.log('seb:', sebTemplate.toString()); // 'Hello SEB!'
