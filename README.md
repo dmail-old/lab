@@ -1,6 +1,6 @@
 # lab
 
-Lab compose values into composite, providing composable and reusable behaviour.  
+Provide object composition with enforced immutability to manipulate prototype used as class.  
 This repository is under dev, nothing is stable or meant to be used by anyone for now.
 
 ## Example
@@ -37,10 +37,9 @@ const actualComposite = composite.value;
 assert.deepEqual(actualComposite, expectedComposite);
 ```
 
-## How to use composite ?
+## Instantiation
 
-Composite are not meant to be consumed directly.  
-The purpose is to call composite construct method to produce a consumable instance. 
+By calling a composite construct method you'll get a consumable instance. 
 
 ```javascript
 import {compose} from '@dmail/lab';
@@ -48,14 +47,16 @@ import {compose} from '@dmail/lab';
 const value = {};
 const composite = compose(value);
 const instance = composite.construct();
-Object.getPrototypeOf(instance) === value; // true
+Object.getPrototypeOf(instance) === composite.value; // true
 ```
 
-## What are the benefits ?
+## Pros and cons
 
-- Support property descriptors
-- Will support infected composition
-- Will support circular structure
-- Will support composition of non native values (a custom object prototype or constructor)
+Pros
+- Logic can be splitted into composable and reusable unit
+Note : Putting a list of benefits without explaining how to use them is not optimal but I'll do that later.
 
-Note : Putting a list of feature without explaining how to use them is not optimal but I'll do that later.
+Cons
+- todo
+
+
