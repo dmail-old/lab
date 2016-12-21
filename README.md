@@ -52,82 +52,81 @@ Object.getPrototypeOf(instance) === composite.value; // true
 
 ## Why ?
 
-Mainly to solve the class/instance mutability problem.
-To illustrate imagine you're asked to create a User model with two requirements.
-- First requirement: every user have its own list of items
-- Second requirement: you must be able to control which items are given to a user once for all
+To provide a more readable and robust solution to a common problem when you're creating object prototypes.  
+Imagine you're asked to create a User model with the following requirements:
 
-### VanillaJS solution
+- First requirement: you must ensure every user have his own list of items
+- Second requirement: you must provide a way to control which items are given to a user upon instantiation
+
+Your solution must pass the following pseudo test 
 
 ```javascript
-function construct(proto) {
-    const instance = Object.create(proto)
-    instance.constructor();
-    return instance;
-}
-// the first naive way of writing it is as follow
+import assert from '@node/assert';
+import User from './user.js';
+
 const sword = {name: 'sword'};
-const User = {
-    constructor() {},
-    items: []
-};
-// however it comes with a problem: items are share by user instance
-const firstUser = construct(User);
-user.items.push(sword);
-const secondUser = construct(User);
-secondUser.items[0]; // sword
-// it's because secondUser.items === firstUser.items
-// to fix this you must change User.constructor to give user instance their own items array
-User.constructor = function() {
-    this.items = [];
-};
-// now the following is verified construct(User).items !== construct(User).items
-// in other words our first requirement is met : every user have its own list of items
+const UserWithSwordFactory = User.asFactoryGiving(sword);
+const firstUser = User.construct();
+const secondUser = UserWithSwordFactory.construct();
 
-// the second requirement is way harder to achieve with vanillaJS
-// To rephrase it: you may decide every user is given a "sword" item on instantiation
-// you can get something close to that with the following code
-User.constructor = function() {
-    this.items = User.items.slice();
-};
-User.items.push(sword);
-construct(User).items[0]; // sword
-// but here is the problem: construct(User).items[0] === construct(User).items[0];
-// in other words: every user share the same sword
-
-// the right User.constructor implementation regarding the requirements would be
-User.constructor = function() {
-    this.items = User.items.map(function(item) {
-        const itemPrototype = Object.getPrototypeOf(item);
-        const itemProperties = Object.getOwnPropertyDescriptors(item);
-        return Object.create(itemPrototype, itemProperties);
-    });
-};
+assert(firstUser.hasOwnProperty('items'), 'user must have their own list of items');
+const secondUserSword = secondUser.items[0];
+assert.deepEqual(secondUserSword, sword, 'user sword item must be deepEqual to sword item');
+assert(secondUserSword !== sword, 'a user with sword must have his own sword');
 ```
 
-### Lab.js solution
+### Using Vanilla JavaScript
 
-lab.js help you to implement the above problem with ease.
+```javascript
+const User = {
+    construct() {
+        const user = Object.create(this);
+        user.constructor();
+        return user;
+    },
+    constructor() {
+        // ensure each user got his own list of items
+        this.items = [];
+    },
+    
+    // provide a way to create a factory of user already having one/many item
+    asFactoryGiving(...items) {
+        const CustomUserFactory = Object.create(User);
+        CustomUserFactory.constructor = function() {
+            User.constructor.apply(this, arguments);
+            for (let item of items) {
+                const itemPrototype = Object.getPrototypeOf(item);
+                const itemProperties = Object.getOwnPropertyDescriptors(item);
+                const userItem = Object.create(itemPrototype, itemProperties);
+                this.items.push(userItem);
+            }
+        };
+        return CustomUserFactory;
+    }
+};
+
+export default User;
+```
+
+Vanilla JavaScript solution is ok but very specific to this use case. It means you cannot reuse it to create arbitrary factory of arbitrary object structure.  
+
+### Using composition + immutability
 
 ```javascript
 import {compose} from '@dmail/lab';
-import assert from '@node/assert';
 
 const User = compose({
-    items: [],
-    constructor() {
-        // nothing to do there, you could omit the constructor method
-    }
+    items: []
 });
-// add a sword to that User prototype
-const sword = {name: 'sword'};
-User.items.push(sword);
+User.asFactoryGiving = function(...items) {
+    return this.compose({
+        items: items
+    });
+};
 
-// let's ensure every user get a sword
-const firstUserSword = User.construct().items[0];
-const secondUserSword = User.construct().items[0];
-assert.deepEqual(firstUserSword, sword);
-assert.deepEqual(secondUserSword, sword);
-// and his own sword of course
-assert(firstUserSword !== secondUserSword);
+export default User;
 ```
+
+Using composition + immutability you create what you need without much effort.
+
+
