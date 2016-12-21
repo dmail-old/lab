@@ -127,6 +127,10 @@ User.asFactoryGiving = function(...items) {
 export default User;
 ```
 
-Using composition + immutability you create what you need without much effort.
+There is not much to say about the code above :)
 
+## Install
+
+There is no public version for now and the code is written in ES6 and has no ES5 build.  
+I recommend this commit as the latest "stable" version of lab.js `npm i --ignore-scripts --production https://github.com/dmail/lab.git#1a10f6d5cfa3b51aa5946188d546659c4cce0120`.
 
