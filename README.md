@@ -36,23 +36,16 @@ const actualComposite = composite.value;
 assert.deepEqual(actualComposite, expectedComposite);
 ```
 
-## Instantiation
-
-By calling a composite construct method you'll get a consumable instance.
-
-```javascript
-import {compose} from '@dmail/lab';
-
-const value = {};
-const composite = compose(value);
-const instance = composite.construct();
-Object.getPrototypeOf(instance) === composite.value; // true
-```
-
 ## Why ?
 
-To provide a more readable and robust solution to a common problem when you're creating object prototypes.  
-Imagine you're asked to create a User model with the following requirements:
+The main feature is to provide a readable and robust solution to create your object prototypes.  
+I'll show you how composition + immutability can enchance how you implement an expected behaviour.  
+First I'll describe the expected behaviour, then implement it with VanillaJS, then using lab.js.  
+I won't comment much on the differences between the two implementations hoping code will speak for itself. 
+
+### Expected behaviour
+
+You must provide a User object behaving as follow:
 
 - First requirement: you must ensure every user have his own list of items
 - Second requirement: you must provide a way to control which items are given to a user upon instantiation
@@ -126,12 +119,11 @@ User.asFactoryGiving = function(...items) {
 export default User;
 ```
 
-There is not much to say about the code above :)
-
 ## Install
 
 There is no public version for now and the code is written in ES6 and has no ES5 build.  
-I recommend this commit as the latest "stable" version of lab.js.
+It means you have to use lab.js inside an ES6 environment with module loader & transpilation.  
+I recommend this command to get the latest "stable" version of lab.js.
 
 `npm i --ignore-scripts --production https://github.com/dmail/lab.git#5aa6f70d5a72431632409b19978a58d790eb91e8`.
 
