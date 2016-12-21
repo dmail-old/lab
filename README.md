@@ -1,7 +1,6 @@
 # lab
 
 Provide object composition with enforced immutability to manipulate prototype used as class.
-This repository is under dev, nothing is stable or meant to be used by anyone for now.
 
 ## Example
 
